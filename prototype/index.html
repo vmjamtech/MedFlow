@@ -1,0 +1,2315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MedFlow — Smart Medication & Inventory Prototype</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <script>
+    tailwind.config = {
+      theme: {
+        extend: {
+          fontFamily: {
+            sans: ['Inter', 'sans-serif'],
+          },
+          colors: {
+            brand: {
+              50: '#f0fdfa',
+              100: '#ccfbf1',
+              200: '#99f6e4',
+              500: '#14b8a6',
+              600: '#0d9488',
+              700: '#0f766e',
+              900: '#134e4a',
+            }
+          }
+        }
+      }
+    };
+  </script>
+  <style>
+    body {
+      font-family: 'Inter', sans-serif;
+      background-color: #f1f5f9;
+      background-image: radial-gradient(#cbd5e1 1px, transparent 1px);
+      background-size: 24px 24px;
+    }
+    /* Custom subtle scrollbar inside the phone screen */
+    .phone-scroll::-webkit-scrollbar {
+      width: 4px;
+    }
+    .phone-scroll::-webkit-scrollbar-track {
+      background: transparent;
+    }
+    .phone-scroll::-webkit-scrollbar-thumb {
+      background: #cbd5e1;
+      border-radius: 9999px;
+    }
+    @keyframes slideDown {
+      from { transform: translateY(-100%); opacity: 0; }
+      to { transform: translateY(0); opacity: 1; }
+    }
+    .animate-notification {
+      animation: slideDown 0.35s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+    }
+    @keyframes toastPop {
+      0% { transform: translateY(16px) scale(0.95); opacity: 0; }
+      100% { transform: translateY(0) scale(1); opacity: 1; }
+    }
+    .animate-toast {
+      animation: toastPop 0.25s ease-out forwards;
+    }
+  </style>
+</head>
+<body class="min-h-screen flex flex-col items-center justify-center p-3 sm:p-6 text-slate-800">
+
+  <!-- Interactive Sandbox / Demo Controls Bar -->
+  <div class="w-full max-w-md mb-4 bg-white/90 backdrop-blur-md border border-slate-200/80 shadow-sm rounded-2xl p-3 flex flex-wrap items-center justify-between gap-2">
+    <div class="flex items-center gap-2">
+      <span class="flex h-2.5 w-2.5 relative">
+        <span class="animate-ping absolute inline-flex h-full w-full rounded-full bg-brand-400 opacity-75"></span>
+        <span class="relative inline-flex rounded-full h-2.5 w-2.5 bg-brand-600"></span>
+      </span>
+      <span class="text-xs font-semibold text-slate-700 tracking-tight">Interactive Demo Controls</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <button onclick="triggerLockScreenNotification()" class="text-xs font-medium bg-brand-600 hover:bg-brand-700 text-white px-3 py-1.5 rounded-xl shadow-sm transition active:scale-95 flex items-center gap-1.5">
+        <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 17h5l-1.405-1.405A2.032 2.032 0 0118 14.158V11a6.002 6.002 0 00-4-5.659V5a2 2 0 10-4 0v.341C7.67 6.165 6 8.388 6 11v3.159c0 .538-.214 1.055-.595 1.436L4 17h5m6 0v1a3 3 0 11-6 0v-1m6 0H9"></path></svg>
+        Test Lock Alert
+      </button>
+      <button onclick="resetDemoData()" class="text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1.5 rounded-xl transition active:scale-95">
+        Reset Data
+      </button>
+    </div>
+  </div>
+
+  <!-- Mobile Phone Frame -->
+  <div class="relative w-full max-w-[395px] h-[790px] max-h-[86vh] bg-slate-900 rounded-[46px] p-3 shadow-2xl ring-1 ring-slate-900/10 flex flex-col">
+    <!-- Hardware Side Buttons (Decorative) -->
+    <div class="hidden sm:block absolute -left-1.5 top-28 w-1 h-10 bg-slate-800 rounded-l-md"></div>
+    <div class="hidden sm:block absolute -left-1.5 top-44 w-1 h-14 bg-slate-800 rounded-l-md"></div>
+    <div class="hidden sm:block absolute -right-1.5 top-36 w-1 h-16 bg-slate-800 rounded-r-md"></div>
+
+    <!-- Screen Viewport -->
+    <div class="relative w-full h-full bg-slate-50 rounded-[36px] overflow-hidden flex flex-col">
+
+      <!-- iOS-style Status Bar & Dynamic Island -->
+      <div class="bg-white pt-2.5 pb-2 px-6 flex items-center justify-between text-[11px] font-semibold text-slate-800 select-none z-20 shrink-0">
+        <span id="status-clock">08:00 AM</span>
+        <div class="w-24 h-5 bg-slate-950 rounded-full flex items-center justify-end px-2">
+          <div class="w-2 h-2 rounded-full bg-slate-800 ring-1 ring-slate-700"></div>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <svg class="w-3.5 h-3.5 text-slate-800" fill="currentColor" viewBox="0 0 24 24"><path d="M12 3C7.46 3 3.34 4.78.29 7.67c-.18.18-.29.43-.29.71 0 .28.11.53.29.71l11 11c.39.39 1.02.39 1.41 0l11-11c.18-.18.29-.43.29-.71 0-.28-.11-.53-.29-.71C20.66 4.78 16.54 3 12 3z"/></svg>
+          <div class="w-5 h-2.5 border border-slate-800 rounded-[3px] p-0.5 flex items-center">
+            <div class="w-full h-full bg-slate-800 rounded-[1px]"></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Simulated Push / Lock-Screen Notification Banner -->
+      <div id="push-banner" class="hidden absolute top-11 left-3 right-3 z-50 bg-slate-900/95 backdrop-blur-md text-white rounded-2xl p-3.5 shadow-xl border border-slate-700/80 animate-notification">
+        <div class="flex items-start justify-between gap-2.5">
+          <div class="flex items-center gap-2.5">
+            <div class="w-9 h-9 rounded-xl bg-brand-500/20 border border-brand-400/40 flex items-center justify-center shrink-0">
+              <span class="text-lg">💊</span>
+            </div>
+            <div>
+              <div class="flex items-center gap-1.5">
+                <span class="text-[10px] font-bold uppercase tracking-wider text-brand-400">MedFlow Reminder</span>
+                <span class="text-[10px] text-slate-400">• Now</span>
+              </div>
+              <p id="push-title" class="text-sm font-semibold leading-tight mt-0.5">Time for Amoxicillin 500mg</p>
+              <p id="push-subtitle" class="text-xs text-slate-300 mt-0.5">Take 1 capsule • Every 8h interval</p>
+            </div>
+          </div>
+          <button onclick="dismissPushBanner()" class="text-slate-400 hover:text-white p-1">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="grid grid-cols-2 gap-2 mt-3 pt-2.5 border-t border-slate-800">
+          <button id="push-take-btn" class="bg-brand-600 hover:bg-brand-500 text-white text-xs font-semibold py-2 rounded-xl transition active:scale-95">
+            ✓ Take Now
+          </button>
+          <button id="push-snooze-btn" class="bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold py-2 rounded-xl transition active:scale-95">
+            Snooze 15m
+          </button>
+        </div>
+      </div>
+
+      <!-- Main App Header -->
+      <header id="app-header" class="bg-white px-5 pt-2 pb-3.5 border-b border-slate-100 shrink-0">
+        <div class="flex items-center justify-between">
+          <div>
+            <p id="header-subtitle" class="text-xs font-medium text-brand-600">Wednesday, Nov 18</p>
+            <h1 id="header-title" class="text-xl font-bold text-slate-900 tracking-tight">Today's Regimen</h1>
+          </div>
+          <div id="header-badge" class="bg-brand-50 border border-brand-200/70 px-3 py-1.5 rounded-2xl text-right">
+            <span id="adherence-pill" class="text-xs font-bold text-brand-700">0 / 4 Taken</span>
+          </div>
+        </div>
+      </header>
+
+      <!-- Scrollable Content Area -->
+      <main id="main-content" class="flex-1 overflow-y-auto phone-scroll px-4 py-4 space-y-5 pb-24">
+        <!-- Dynamically injected tab content -->
+      </main>
+
+      <!-- Floating Add Medication (+) FAB -->
+      <button id="add-med-fab" onclick="openAddMedModal()" title="Add Medication" class="absolute bottom-20 right-4 z-30 w-12 h-12 rounded-2xl bg-brand-600 hover:bg-brand-700 text-white shadow-lg shadow-brand-600/30 flex items-center justify-center transition transform active:scale-95">
+        <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M12 4v16m8-8H4"/></svg>
+      </button>
+
+      <!-- Floating Toast Notification -->
+      <div id="toast-container" class="pointer-events-none absolute bottom-20 left-4 right-16 z-40 flex flex-col items-start gap-2"></div>
+
+      <!-- Bottom Navigation Bar (5 Tabs: Today, Vitals, Cabinet, Guardian, Report) -->
+      <nav class="bg-white/95 backdrop-blur-md border-t border-slate-200/80 px-1.5 py-2 grid grid-cols-5 gap-0.5 shrink-0 z-30">
+        <button onclick="switchTab('today')" data-tab="today" class="nav-btn flex flex-col items-center justify-center py-1 px-1 rounded-xl text-brand-600 transition">
+          <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z"/></svg>
+          <span class="text-[9px] font-semibold">Today</span>
+        </button>
+
+        <button onclick="switchTab('vitals')" data-tab="vitals" class="nav-btn flex flex-col items-center justify-center py-1 px-1 rounded-xl text-slate-400 hover:text-slate-600 transition">
+          <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M4.318 6.318a4.5 4.5 0 000 6.364L12 20.364l7.682-7.682a4.5 4.5 0 00-6.364-6.364L12 7.636l-1.318-1.318a4.5 4.5 0 00-6.364 0z"/></svg>
+          <span class="text-[9px] font-semibold">Vitals</span>
+        </button>
+
+        <button onclick="switchTab('cabinet')" data-tab="cabinet" class="nav-btn relative flex flex-col items-center justify-center py-1 px-1 rounded-xl text-slate-400 hover:text-slate-600 transition">
+          <span id="low-stock-dot" class="hidden absolute top-1 right-3 w-2 h-2 bg-amber-500 rounded-full ring-2 ring-white"></span>
+          <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 11H5m14 0a2 2 0 012 2v6a2 2 0 01-2 2H5a2 2 0 01-2-2v-6a2 2 0 012-2m14 0V9a2 2 0 00-2-2M5 11V9a2 2 0 012-2m0 0V5a2 2 0 012-2h6a2 2 0 012 2v2M7 7h10"/></svg>
+          <span class="text-[9px] font-semibold">Cabinet</span>
+        </button>
+
+        <button onclick="switchTab('guardian')" data-tab="guardian" class="nav-btn relative flex flex-col items-center justify-center py-1 px-1 rounded-xl text-slate-400 hover:text-slate-600 transition">
+          <span id="guardian-alert-dot" class="hidden absolute top-1 right-3 w-2 h-2 bg-rose-500 rounded-full ring-2 ring-white"></span>
+          <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M17 20h5v-2a3 3 0 00-5.356-1.857M17 20H7m10 0v-2c0-.656-.126-1.283-.356-1.857M7 20H2v-2a3 3 0 015.356-1.857M7 20v-2c0-.656.126-1.283.356-1.857m0 0a5.002 5.002 0 019.288 0M15 7a3 3 0 11-6 0 3 3 0 016 0zm6 3a2 2 0 11-4 0 2 2 0 014 0zM7 10a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+          <span class="text-[9px] font-semibold">Guardian</span>
+        </button>
+
+        <button onclick="switchTab('report')" data-tab="report" class="nav-btn flex flex-col items-center justify-center py-1 px-1 rounded-xl text-slate-400 hover:text-slate-600 transition">
+          <svg class="w-5 h-5 mb-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 17v-2m3 2v-4m3 4v-6m2 10H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"/></svg>
+          <span class="text-[9px] font-semibold">Report</span>
+        </button>
+      </nav>
+
+      <!-- Modal Drawer Overlay (Used for Log Vital Sign & Add Medication) -->
+      <div id="modal-backdrop" class="hidden absolute inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex flex-col justify-end">
+        <div id="modal-sheet" class="bg-white rounded-t-[32px] max-h-[88%] flex flex-col shadow-2xl border-t border-slate-200 overflow-hidden">
+          <div class="px-5 pt-3 pb-2.5 border-b border-slate-100 flex items-center justify-between shrink-0">
+            <div>
+              <p id="modal-subtitle" class="text-[11px] font-semibold text-brand-600 uppercase tracking-wider">Quick Entry</p>
+              <h2 id="modal-title" class="text-base font-bold text-slate-900">Log Vital Sign</h2>
+            </div>
+            <button onclick="closeModal()" class="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-600 flex items-center justify-center transition">
+              <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+            </button>
+          </div>
+          <div id="modal-body" class="p-5 overflow-y-auto phone-scroll space-y-4">
+            <!-- Modal form injected here -->
+          </div>
+        </div>
+      </div>
+
+      <!-- Home Indicator Bar -->
+      <div class="bg-white pb-1.5 pt-0.5 flex justify-center shrink-0">
+        <div class="w-28 h-1 bg-slate-300 rounded-full"></div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    // ==========================================
+    // 1. STATE & PRE-LOADED SAMPLE DATA
+    // ==========================================
+    let currentTab = 'today';
+    let simulatedMinutesNow = 8 * 60; // Start simulated clock at 08:00 AM (480 mins)
+    let prnTimerInterval = null;
+
+    // Vitals UI state
+    let selectedTrendVital = 'bp'; // 'bp' | 'sugar' | 'pulse' | 'temp' | 'spo2' | 'weight'
+    let glucoseUnit = 'mg/dL'; // 'mg/dL' | 'mmol/L'
+    let vitalsHistoryFilter = 'all'; // 'all' | 'bp' | 'sugar' | 'pulse' | 'other'
+    let vitalsViewMode = 'cards'; // 'cards' | 'printable'
+    let vitalsDateFrom = '2026-11-12';
+    let vitalsDateTo = '2026-11-18';
+    let vitalsPromptDismissed = false;
+
+    // Guardian Mode & OCR state
+    let guardianSubView = 'monitoring'; // 'monitoring' | 'mycode'
+    let myPatientCode = 'MED-7429';
+    let guardianSyncEnabled = true;
+    let monitoredPatients = [];
+    let guardianAlerts = [];
+    let ocrSampleIndex = 0;
+
+    // Core Medication & Schedule Arrays
+    let medications = [];
+    let doses = [];
+    let historyLogs = [];
+    let vitalLogs = [];
+
+    const PILL_COLORS = {
+      teal: { fill: '#0d9488', accent: '#99f6e4', bg: 'bg-teal-50' },
+      amber: { fill: '#d97706', accent: '#fde68a', bg: 'bg-amber-50' },
+      rose: { fill: '#e11d48', accent: '#fecdd3', bg: 'bg-rose-50' },
+      blue: { fill: '#0284c7', accent: '#bae6fd', bg: 'bg-sky-50' },
+      indigo: { fill: '#4f46e5', accent: '#c7d2fe', bg: 'bg-indigo-50' }
+    };
+
+    const OCR_SAMPLE_BOTTLES = [
+      {
+        rawText: 'LOSARTAN POTASSIUM 50MG TAB\nTAKE 1 TABLET BY MOUTH EVERY MORNING\nQTY: 30 TABS • REFILLS: 2',
+        name: 'Losartan',
+        strength: '50mg',
+        shape: 'round',
+        color: 'blue',
+        doseQty: 1,
+        unit: 'tablet',
+        scheduleType: 'fixed',
+        fixedTime: '08:00',
+        stock: 30,
+        mealRequired: 'no_meal',
+        mealTiming: 'Before Meal'
+      },
+      {
+        rawText: 'AZITHROMYCIN 500MG CAPSULES\nTAKE 1 CAPSULE EVERY 12 HOURS WITH FOOD\nQTY: 14 CAPS',
+        name: 'Azithromycin',
+        strength: '500mg',
+        shape: 'capsule',
+        color: 'teal',
+        doseQty: 1,
+        unit: 'capsule',
+        scheduleType: 'interval',
+        intervalHours: 12,
+        startTime: '09:00',
+        stock: 14,
+        mealRequired: 'with_meal',
+        mealTiming: 'After Meal'
+      },
+      {
+        rawText: 'CETIRIZINE HCL 10MG TABLET\nTAKE 1 TABLET AS NEEDED FOR ALLERGY (MAX 1/DAY)\nQTY: 20 TABS',
+        name: 'Cetirizine',
+        strength: '10mg',
+        shape: 'oval',
+        color: 'indigo',
+        doseQty: 1,
+        unit: 'tablet',
+        scheduleType: 'prn',
+        cooldown: 24,
+        maxDay: 1,
+        stock: 20,
+        mealRequired: 'no_meal',
+        mealTiming: 'Before Meal'
+      }
+    ];
+
+    function getInitialState() {
+      vitalsPromptDismissed = false;
+      selectedTrendVital = 'bp';
+      vitalsHistoryFilter = 'all';
+      vitalsViewMode = 'cards';
+      vitalsDateFrom = '2026-11-12';
+      vitalsDateTo = '2026-11-18';
+      guardianSubView = 'monitoring';
+      guardianSyncEnabled = true;
+
+      medications = [
+        {
+          id: 'med-amox',
+          name: 'Amoxicillin',
+          strength: '500mg',
+          shape: 'capsule',
+          color: 'amber',
+          doseQty: 1,
+          unit: 'capsule',
+          scheduleType: 'interval',
+          intervalHours: 8,
+          mealTag: 'After Meal',
+          instruction: 'Every 8 hours • Auto-shifts if taken late',
+          stockRemaining: 14,
+          stockTotal: 21,
+          lowStockThreshold: 5
+        },
+        {
+          id: 'med-met',
+          name: 'Metformin',
+          strength: '850mg',
+          shape: 'oval',
+          color: 'teal',
+          doseQty: 0.5,
+          unit: 'tablet',
+          scheduleType: 'fixed',
+          fixedTimes: ['08:00', '20:00'],
+          mealTag: 'With Meal',
+          instruction: '0.5 scored tablet with breakfast & dinner',
+          stockRemaining: 4,
+          stockTotal: 30,
+          lowStockThreshold: 5
+        },
+        {
+          id: 'med-ibu',
+          name: 'Ibuprofen',
+          strength: '400mg',
+          shape: 'round',
+          color: 'rose',
+          doseQty: 1,
+          unit: 'tablet',
+          scheduleType: 'prn',
+          cooldownHours: 4,
+          maxPerDay: 3,
+          takenTodayCount: 1,
+          cooldownRemainingSeconds: 0,
+          mealTag: 'After Meal',
+          instruction: 'Max 3 tablets/day • 4h safety cooldown',
+          stockRemaining: 18,
+          stockTotal: 20,
+          lowStockThreshold: 4
+        }
+      ];
+
+      doses = [
+        {
+          id: 'dose-amox-1',
+          medId: 'med-amox',
+          scheduledMinutes: 8 * 60,
+          originalMinutes: 8 * 60,
+          status: 'pending',
+          takenAtStr: null,
+          shiftNote: null
+        },
+        {
+          id: 'dose-met-1',
+          medId: 'med-met',
+          scheduledMinutes: 8 * 60 + 30,
+          originalMinutes: 8 * 60 + 30,
+          status: 'pending',
+          takenAtStr: null,
+          shiftNote: null
+        },
+        {
+          id: 'dose-amox-2',
+          medId: 'med-amox',
+          scheduledMinutes: 16 * 60,
+          originalMinutes: 16 * 60,
+          status: 'pending',
+          takenAtStr: null,
+          shiftNote: null
+        },
+        {
+          id: 'dose-met-2',
+          medId: 'med-met',
+          scheduledMinutes: 20 * 60,
+          originalMinutes: 20 * 60,
+          status: 'pending',
+          takenAtStr: null,
+          shiftNote: null
+        }
+      ];
+
+      monitoredPatients = [
+        {
+          id: 'pat-mom',
+          name: 'Mom (Elena R.)',
+          code: 'MED-3104',
+          relation: 'Mother',
+          adherence: 96,
+          lastSync: '2 mins ago',
+          status: 'on_track',
+          meds: [
+            { name: 'Losartan 50mg', qty: '1 tablet', time: '08:00 AM', status: 'taken' },
+            { name: 'Atorvastatin 20mg', qty: '1 tablet', time: '08:00 PM', status: 'upcoming' }
+          ]
+        },
+        {
+          id: 'pat-dad',
+          name: 'Dad (Roberto R.)',
+          code: 'MED-9921',
+          relation: 'Father',
+          adherence: 84,
+          lastSync: 'Just now',
+          status: 'overdue',
+          meds: [
+            { name: 'Insulin Glargine', qty: '12 units', time: '07:00 AM', status: 'missed_1h' },
+            { name: 'Metformin 500mg', qty: '1 tablet', time: '12:30 PM', status: 'upcoming' }
+          ]
+        }
+      ];
+
+      guardianAlerts = [
+        {
+          id: 'galert-1',
+          patientName: 'Dad (Roberto R.)',
+          medName: 'Insulin Glargine (12 units)',
+          scheduledTime: '07:00 AM',
+          overdueBy: '1h 05m past window',
+          acknowledged: false
+        }
+      ];
+
+      historyLogs = [
+        { time: '07:30 AM', date: 'Nov 18', text: 'Logged Ibuprofen 400mg (1 tablet) • PRN' },
+        { time: '08:02 PM', date: 'Nov 17', text: 'Took Metformin 850mg (0.5 tablet) • On time' },
+        { time: '04:00 PM', date: 'Nov 17', text: 'Took Amoxicillin 500mg (1 capsule) • On time' }
+      ];
+
+      vitalLogs = [
+        {
+          id: 'v-1',
+          type: 'bp',
+          sys: 122,
+          dia: 78,
+          pulse: 72,
+          date: '2026-11-18',
+          dateLabel: 'Today, 07:45 AM',
+          context: 'Resting • Morning',
+          note: 'Before morning coffee'
+        },
+        {
+          id: 'v-2',
+          type: 'sugar',
+          valueMgDl: 104,
+          date: '2026-11-18',
+          dateLabel: 'Today, 07:40 AM',
+          context: 'Fasting',
+          note: 'Normal morning reading'
+        },
+        {
+          id: 'v-3',
+          type: 'pulse',
+          value: 72,
+          date: '2026-11-18',
+          dateLabel: 'Today, 07:45 AM',
+          context: 'Resting',
+          note: 'Measured with BP cuff'
+        },
+        {
+          id: 'v-4',
+          type: 'temp',
+          value: 36.7,
+          date: '2026-11-18',
+          dateLabel: 'Today, 07:35 AM',
+          context: 'Oral',
+          note: 'No fever'
+        },
+        {
+          id: 'v-5',
+          type: 'spo2',
+          value: 98,
+          date: '2026-11-17',
+          dateLabel: 'Nov 17, 08:15 PM',
+          context: 'Resting',
+          note: ''
+        },
+        {
+          id: 'v-6',
+          type: 'weight',
+          value: 68.4,
+          date: '2026-11-17',
+          dateLabel: 'Nov 17, 07:10 AM',
+          context: 'Morning',
+          note: ''
+        },
+        {
+          id: 'v-7',
+          type: 'bp',
+          sys: 128,
+          dia: 82,
+          pulse: 76,
+          date: '2026-11-17',
+          dateLabel: 'Nov 17, 08:00 AM',
+          context: 'Morning',
+          note: ''
+        },
+        {
+          id: 'v-8',
+          type: 'sugar',
+          valueMgDl: 138,
+          date: '2026-11-17',
+          dateLabel: 'Nov 17, 01:30 PM',
+          context: '2h After Meal',
+          note: 'After lunch'
+        },
+        {
+          id: 'v-9',
+          type: 'bp',
+          sys: 118,
+          dia: 75,
+          pulse: 68,
+          date: '2026-11-16',
+          dateLabel: 'Nov 16, 08:10 AM',
+          context: 'Resting',
+          note: ''
+        },
+        {
+          id: 'v-10',
+          type: 'sugar',
+          valueMgDl: 99,
+          date: '2026-11-16',
+          dateLabel: 'Nov 16, 07:30 AM',
+          context: 'Fasting',
+          note: ''
+        },
+        {
+          id: 'v-11',
+          type: 'bp',
+          sys: 134,
+          dia: 85,
+          pulse: 80,
+          date: '2026-11-15',
+          dateLabel: 'Nov 15, 09:00 AM',
+          context: 'After Walk',
+          note: 'Slightly elevated'
+        },
+        {
+          id: 'v-12',
+          type: 'sugar',
+          valueMgDl: 112,
+          date: '2026-11-15',
+          dateLabel: 'Nov 15, 07:50 AM',
+          context: 'Fasting',
+          note: ''
+        },
+        {
+          id: 'v-13',
+          type: 'bp',
+          sys: 121,
+          dia: 77,
+          pulse: 70,
+          date: '2026-11-14',
+          dateLabel: 'Nov 14, 08:05 AM',
+          context: 'Resting',
+          note: ''
+        },
+        {
+          id: 'v-14',
+          type: 'sugar',
+          valueMgDl: 101,
+          date: '2026-11-14',
+          dateLabel: 'Nov 14, 07:45 AM',
+          context: 'Fasting',
+          note: ''
+        }
+      ];
+    }
+
+    // ==========================================
+    // 2. FORMATTING & CLINICAL HELPERS
+    // ==========================================
+    function formatMinutesTo12h(totalMins) {
+      const wrapped = ((totalMins % 1440) + 1440) % 1440;
+      const hrs24 = Math.floor(wrapped / 60);
+      const mins = wrapped % 60;
+      const ampm = hrs24 >= 12 ? 'PM' : 'AM';
+      const hrs12 = hrs24 % 12 === 0 ? 12 : hrs24 % 12;
+      return `${String(hrs12).padStart(2, '0')}:${String(mins).padStart(2, '0')} ${ampm}`;
+    }
+
+    function getTimeOfDayGroup(mins) {
+      const wrapped = ((mins % 1440) + 1440) % 1440;
+      if (wrapped < 12 * 60) return 'Morning';
+      if (wrapped < 17 * 60) return 'Afternoon';
+      return 'Evening';
+    }
+
+    function parse24hToMinutes(timeStr) {
+      if (!timeStr) return 8 * 60;
+      const [h, m] = timeStr.split(':').map(Number);
+      return (h || 0) * 60 + (m || 0);
+    }
+
+    function formatQuantity(qty, unit) {
+      const plural = qty > 1 && !unit.endsWith('s') && unit !== 'ml' ? unit + 's' : unit;
+      return `${qty} ${plural}`;
+    }
+
+    function formatSeconds(secs) {
+      const h = Math.floor(secs / 3600);
+      const m = Math.floor((secs % 3600) / 60);
+      const s = secs % 60;
+      return `${String(h).padStart(2, '0')}:${String(m).padStart(2, '0')}:${String(s).padStart(2, '0')}`;
+    }
+
+    function renderPillSVG(shape, colorKey, size = 34) {
+      const palette = PILL_COLORS[colorKey] || PILL_COLORS.teal;
+      if (shape === 'capsule') {
+        return `
+          <svg width="${size}" height="${size}" viewBox="0 0 36 36" fill="none">
+            <rect x="6" y="12" width="24" height="12" rx="6" transform="rotate(-35 18 18)" fill="${palette.fill}"/>
+            <path d="M18 18L26.5 12C29.2 10.1 32.8 10.8 34.6 13.5C36.4 16.2 35.7 19.8 33 21.6L24.5 27.6L18 18Z" transform="translate(-5.5 -2)" fill="${palette.accent}"/>
+          </svg>`;
+      }
+      if (shape === 'oval') {
+        return `
+          <svg width="${size}" height="${size}" viewBox="0 0 36 36" fill="none">
+            <ellipse cx="18" cy="18" rx="13" ry="8" transform="rotate(-25 18 18)" fill="${palette.fill}"/>
+            <line x1="15" y1="12" x2="21" y2="24" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+          </svg>`;
+      }
+      return `
+        <svg width="${size}" height="${size}" viewBox="0 0 36 36" fill="none">
+          <circle cx="18" cy="18" r="11" fill="${palette.fill}"/>
+          <line x1="11" y1="18" x2="25" y2="18" stroke="white" stroke-width="1.8" stroke-linecap="round"/>
+        </svg>`;
+    }
+
+    function getVitalStatus(type, log) {
+      if (!log) return { label: 'No Data', badge: 'bg-slate-100 text-slate-600' };
+      if (type === 'bp') {
+        if (log.sys >= 140 || log.dia >= 90) return { label: 'High (Stage 2)', badge: 'bg-rose-100 text-rose-700' };
+        if (log.sys >= 130 || log.dia >= 80) return { label: 'Elevated', badge: 'bg-amber-100 text-amber-700' };
+        if (log.sys < 90 || log.dia < 60) return { label: 'Low', badge: 'bg-sky-100 text-sky-700' };
+        return { label: 'Normal', badge: 'bg-emerald-100 text-emerald-700' };
+      }
+      if (type === 'sugar') {
+        const val = log.valueMgDl;
+        const isFasting = (log.context || '').toLowerCase().includes('fasting');
+        if (val < 70) return { label: 'Low', badge: 'bg-sky-100 text-sky-700' };
+        if (isFasting && val >= 126) return { label: 'High', badge: 'bg-rose-100 text-rose-700' };
+        if (isFasting && val >= 100) return { label: 'Borderline', badge: 'bg-amber-100 text-amber-700' };
+        if (!isFasting && val >= 180) return { label: 'High', badge: 'bg-rose-100 text-rose-700' };
+        return { label: 'Normal', badge: 'bg-emerald-100 text-emerald-700' };
+      }
+      if (type === 'pulse') {
+        if (log.value > 100) return { label: 'High', badge: 'bg-rose-100 text-rose-700' };
+        if (log.value < 60) return { label: 'Low', badge: 'bg-sky-100 text-sky-700' };
+        return { label: 'Normal', badge: 'bg-emerald-100 text-emerald-700' };
+      }
+      if (type === 'temp') {
+        if (log.value >= 37.8) return { label: 'Fever', badge: 'bg-rose-100 text-rose-700' };
+        if (log.value < 36.0) return { label: 'Low', badge: 'bg-sky-100 text-sky-700' };
+        return { label: 'Normal', badge: 'bg-emerald-100 text-emerald-700' };
+      }
+      if (type === 'spo2') {
+        if (log.value < 95) return { label: 'Low SpO2', badge: 'bg-rose-100 text-rose-700' };
+        return { label: 'Optimal', badge: 'bg-emerald-100 text-emerald-700' };
+      }
+      return { label: 'Logged', badge: 'bg-slate-100 text-slate-700' };
+    }
+
+    function formatGlucoseValue(mgDl) {
+      if (glucoseUnit === 'mmol/L') {
+        return (mgDl / 18.0182).toFixed(1);
+      }
+      return Math.round(mgDl);
+    }
+
+    // ==========================================
+    // 3. TOAST & PUSH NOTIFICATION BANNER
+    // ==========================================
+    function showToast(message, type = 'success') {
+      const container = document.getElementById('toast-container');
+      const toast = document.createElement('div');
+      const bgClass = type === 'warning'
+        ? 'bg-amber-900/95 text-amber-50 border-amber-700'
+        : type === 'alert'
+        ? 'bg-rose-900/95 text-rose-50 border-rose-700'
+        : 'bg-slate-900/95 text-white border-slate-700';
+
+      toast.className = `animate-toast ${bgClass} border px-3.5 py-2.5 rounded-2xl shadow-lg text-xs font-medium leading-snug backdrop-blur-md`;
+      toast.textContent = message;
+      container.appendChild(toast);
+
+      setTimeout(() => {
+        toast.style.opacity = '0';
+        toast.style.transition = 'opacity 0.25s ease';
+        setTimeout(() => toast.remove(), 250);
+      }, 3200);
+    }
+
+    function triggerLockScreenNotification() {
+      const nextPending = doses.find(d => d.status === 'pending');
+      const banner = document.getElementById('push-banner');
+      if (!nextPending) {
+        showToast('All scheduled doses for today are already taken!', 'success');
+        return;
+      }
+      const med = medications.find(m => m.id === nextPending.medId);
+      document.getElementById('push-title').textContent = `Time for ${med.name} ${med.strength}`;
+      document.getElementById('push-subtitle').textContent = `Take ${formatQuantity(med.doseQty, med.unit)} • Scheduled ${formatMinutesTo12h(nextPending.scheduledMinutes)}`;
+
+      document.getElementById('push-take-btn').onclick = () => {
+        dismissPushBanner();
+        takeScheduledDose(nextPending.id, 0);
+      };
+      document.getElementById('push-snooze-btn').onclick = () => {
+        dismissPushBanner();
+        snoozeDose(nextPending.id);
+      };
+
+      banner.classList.remove('hidden');
+    }
+
+    function dismissPushBanner() {
+      document.getElementById('push-banner').classList.add('hidden');
+    }
+
+    // ==========================================
+    // 4. CORE MEDICATION ACTIONS
+    // ==========================================
+    function takeScheduledDose(doseId, lateOffsetMinutes = 0) {
+      const dose = doses.find(d => d.id === doseId);
+      if (!dose || dose.status === 'taken') return;
+
+      const med = medications.find(m => m.id === dose.medId);
+      if (med.stockRemaining < med.doseQty) {
+        showToast(`Not enough ${med.name} in cabinet! Refill stock first.`, 'warning');
+        return;
+      }
+
+      const actualTakenMins = dose.scheduledMinutes + lateOffsetMinutes;
+      dose.status = 'taken';
+      dose.takenAtStr = formatMinutesTo12h(actualTakenMins);
+
+      // Auto-deduct pieces from inventory
+      med.stockRemaining = Math.max(0, Number((med.stockRemaining - med.doseQty).toFixed(2)));
+
+      // Dynamic interval shifting if taken late on interval-based medication
+      let shiftMessage = '';
+      if (med.scheduleType === 'interval' && lateOffsetMinutes > 0) {
+        const subsequentDoses = doses.filter(
+          d => d.medId === med.id && d.status === 'pending' && d.scheduledMinutes > dose.scheduledMinutes
+        );
+        subsequentDoses.forEach((nextDose, idx) => {
+          const newMins = actualTakenMins + med.intervalHours * 60 * (idx + 1);
+          nextDose.scheduledMinutes = newMins;
+          nextDose.shiftNote = `Auto-shifted +${lateOffsetMinutes}m to keep ${med.intervalHours}h spacing`;
+        });
+        if (subsequentDoses.length > 0) {
+          shiftMessage = ` Next dose shifted to ${formatMinutesTo12h(subsequentDoses[0].scheduledMinutes)}.`;
+        }
+      }
+
+      historyLogs.unshift({
+        time: dose.takenAtStr,
+        date: 'Nov 18',
+        text: `Took ${med.name} ${med.strength} (${formatQuantity(med.doseQty, med.unit)})${lateOffsetMinutes > 0 ? ` • +${lateOffsetMinutes}m late` : ''}`
+      });
+
+      showToast(
+        `✓ Logged ${formatQuantity(med.doseQty, med.unit)} of ${med.name}. ${med.stockRemaining} left.${shiftMessage}`,
+        med.stockRemaining <= med.lowStockThreshold ? 'warning' : 'success'
+      );
+
+      renderApp();
+    }
+
+    function snoozeDose(doseId) {
+      const dose = doses.find(d => d.id === doseId);
+      if (!dose || dose.status !== 'pending') return;
+      const med = medications.find(m => m.id === dose.medId);
+      dose.scheduledMinutes += 15;
+      dose.shiftNote = 'Snoozed +15 mins';
+      showToast(`⏰ Snoozed ${med.name} to ${formatMinutesTo12h(dose.scheduledMinutes)}`);
+      renderApp();
+    }
+
+    function takePrnDose(medId) {
+      const med = medications.find(m => m.id === medId);
+      if (!med) return;
+
+      if (med.cooldownRemainingSeconds > 0) {
+        showToast(`Cooldown active! Wait ${formatSeconds(med.cooldownRemainingSeconds)} before next dose.`, 'warning');
+        return;
+      }
+      if (med.takenTodayCount >= med.maxPerDay) {
+        showToast(`Daily safety limit (${med.maxPerDay} intakes/day) reached for ${med.name}!`, 'alert');
+        return;
+      }
+      if (med.stockRemaining < med.doseQty) {
+        showToast(`Out of stock for ${med.name}!`, 'warning');
+        return;
+      }
+
+      med.takenTodayCount += 1;
+      med.stockRemaining = Math.max(0, Number((med.stockRemaining - med.doseQty).toFixed(2)));
+      med.cooldownRemainingSeconds = med.cooldownHours * 3600;
+
+      historyLogs.unshift({
+        time: formatMinutesTo12h(simulatedMinutesNow),
+        date: 'Nov 18',
+        text: `Logged PRN ${med.name} ${med.strength} (${formatQuantity(med.doseQty, med.unit)})`
+      });
+
+      startPrnTimerLoop();
+      showToast(`✓ Logged PRN ${med.name}. ${med.cooldownHours}h safety cooldown started.`);
+      renderApp();
+    }
+
+    function skipPrnCooldown(medId) {
+      const med = medications.find(m => m.id === medId);
+      if (med) {
+        med.cooldownRemainingSeconds = 0;
+        showToast(`⏩ Fast-forwarded ${med.name} cooldown timer for testing.`);
+        renderApp();
+      }
+    }
+
+    function startPrnTimerLoop() {
+      if (prnTimerInterval) clearInterval(prnTimerInterval);
+      prnTimerInterval = setInterval(() => {
+        let anyActive = false;
+        medications.forEach(m => {
+          if (m.scheduleType === 'prn' && m.cooldownRemainingSeconds > 0) {
+            m.cooldownRemainingSeconds -= 1;
+            anyActive = true;
+          }
+        });
+        if (anyActive && currentTab === 'today') {
+          renderApp();
+        } else if (!anyActive) {
+          clearInterval(prnTimerInterval);
+          prnTimerInterval = null;
+        }
+      }, 1000);
+    }
+
+    function refillMedication(medId, addQty = 30) {
+      const med = medications.find(m => m.id === medId);
+      if (!med) return;
+      med.stockRemaining = Number((med.stockRemaining + addQty).toFixed(2));
+      med.stockTotal = Math.max(med.stockTotal, med.stockRemaining);
+      showToast(`📦 Refilled +${addQty} ${med.unit}s of ${med.name} (Total: ${med.stockRemaining})`);
+      renderApp();
+    }
+
+    // ==========================================
+    // 5. GUARDIAN MODE & OCR SCANNER ACTIONS
+    // ==========================================
+    function setGuardianSubView(view) {
+      guardianSubView = view;
+      renderApp();
+    }
+
+    function toggleGuardianSync() {
+      guardianSyncEnabled = !guardianSyncEnabled;
+      showToast(guardianSyncEnabled ? '🛡️ Guardian Cloud Sync enabled' : 'Guardian Cloud Sync paused');
+      renderApp();
+    }
+
+    function copyPatientCode() {
+      const tempInput = document.createElement('input');
+      tempInput.value = myPatientCode;
+      document.body.appendChild(tempInput);
+      tempInput.select();
+      document.execCommand('copy');
+      document.body.removeChild(tempInput);
+      showToast(`📋 Copied Patient Code: ${myPatientCode}`);
+    }
+
+    function linkNewPatientByCode(e) {
+      e.preventDefault();
+      const input = document.getElementById('guardian-code-input');
+      const code = (input?.value || '').trim().toUpperCase();
+      if (!code || code.length < 4) {
+        showToast('Enter a valid patient invite code (e.g. MED-5518)', 'warning');
+        return;
+      }
+      if (monitoredPatients.some(p => p.code === code)) {
+        showToast(`Already monitoring patient with code ${code}`, 'warning');
+        return;
+      }
+
+      const sampleNames = [
+        { name: 'Grandma (Rosa M.)', relation: 'Grandmother', med: 'Amlodipine 5mg', qty: '1 tablet', time: '09:00 AM' },
+        { name: 'Uncle (Carlos D.)', relation: 'Uncle', med: 'Lisinopril 10mg', qty: '1 tablet', time: '08:30 AM' }
+      ];
+      const pick = sampleNames[monitoredPatients.length % sampleNames.length];
+
+      monitoredPatients.push({
+        id: 'pat-' + Date.now(),
+        name: pick.name,
+        code: code,
+        relation: pick.relation,
+        adherence: 100,
+        lastSync: 'Connected just now',
+        status: 'on_track',
+        meds: [
+          { name: pick.med, qty: pick.qty, time: pick.time, status: 'taken' }
+        ]
+      });
+
+      showToast(`✓ Linked ${pick.name} (${code}) to your Guardian list!`);
+      renderApp();
+    }
+
+    function simulateGuardianMissedAlert() {
+      const targetPatient = monitoredPatients[0] || {
+        id: 'pat-mom',
+        name: 'Mom (Elena R.)',
+        code: 'MED-3104',
+        meds: []
+      };
+
+      const missedMedName = 'Losartan 50mg (1 tablet)';
+      targetPatient.status = 'overdue';
+      targetPatient.lastSync = 'Alert triggered now';
+      targetPatient.meds.unshift({
+        name: 'Losartan 50mg',
+        qty: '1 tablet',
+        time: '08:00 AM',
+        status: 'missed_1h'
+      });
+
+      guardianAlerts.unshift({
+        id: 'galert-' + Date.now(),
+        patientName: targetPatient.name,
+        medName: missedMedName,
+        scheduledTime: '08:00 AM',
+        overdueBy: '1h 00m unlogged',
+        acknowledged: false
+      });
+
+      showToast(`🚨 Guardian Alert: ${targetPatient.name} missed ${missedMedName}!`, 'alert');
+      renderApp();
+    }
+
+    function acknowledgeGuardianAlert(alertId) {
+      const alertObj = guardianAlerts.find(a => a.id === alertId);
+      if (alertObj) {
+        alertObj.acknowledged = true;
+        showToast(`✓ Acknowledged alert for ${alertObj.patientName}`);
+        renderApp();
+      }
+    }
+
+    function simulateOcrBottleScan() {
+      const sample = OCR_SAMPLE_BOTTLES[ocrSampleIndex % OCR_SAMPLE_BOTTLES.length];
+      ocrSampleIndex += 1;
+
+      const previewBox = document.getElementById('ocr-preview-box');
+      const previewText = document.getElementById('ocr-raw-text');
+      if (previewBox && previewText) {
+        previewBox.classList.remove('hidden');
+        previewText.textContent = sample.rawText;
+      }
+
+      document.getElementById('add-med-name').value = sample.name;
+      document.getElementById('add-med-strength').value = sample.strength;
+      document.getElementById('add-med-shape').value = sample.shape;
+      document.getElementById('add-med-color').value = sample.color;
+      document.getElementById('add-med-qty').value = sample.doseQty;
+      document.getElementById('add-med-unit').value = sample.unit;
+      document.getElementById('add-med-stock').value = sample.stock;
+      document.getElementById('add-meal-required').value = sample.mealRequired;
+      toggleMealTimingField();
+      if (sample.mealRequired === 'with_meal') {
+        document.getElementById('add-meal-timing').value = sample.mealTiming;
+      }
+
+      const schedSelect = document.getElementById('add-schedule-type');
+      schedSelect.value = sample.scheduleType;
+      toggleScheduleFields();
+
+      if (sample.scheduleType === 'fixed' && document.getElementById('add-fixed-time')) {
+        document.getElementById('add-fixed-time').value = sample.fixedTime;
+      } else if (sample.scheduleType === 'interval') {
+        if (document.getElementById('add-interval-start')) document.getElementById('add-interval-start').value = sample.startTime;
+        if (document.getElementById('add-interval-hours')) document.getElementById('add-interval-hours').value = sample.intervalHours;
+      } else if (sample.scheduleType === 'prn') {
+        if (document.getElementById('add-cooldown')) document.getElementById('add-cooldown').value = sample.cooldown;
+        if (document.getElementById('add-maxday')) document.getElementById('add-maxday').value = sample.maxDay;
+      }
+
+      showToast(`📸 On-device OCR extracted ${sample.name} ${sample.strength}!`);
+    }
+
+    // ==========================================
+    // 6. VITALS ACTIONS & FILTERING
+    // ==========================================
+    function selectTrendVital(type) {
+      selectedTrendVital = type;
+      renderApp();
+    }
+
+    function toggleGlucoseUnit() {
+      glucoseUnit = glucoseUnit === 'mg/dL' ? 'mmol/L' : 'mg/dL';
+      renderApp();
+    }
+
+    function setVitalsHistoryFilter(filter) {
+      vitalsHistoryFilter = filter;
+      renderApp();
+    }
+
+    function setVitalsViewMode(mode) {
+      vitalsViewMode = mode;
+      renderApp();
+    }
+
+    function updateVitalsDateRange(fromVal, toVal) {
+      if (fromVal) vitalsDateFrom = fromVal;
+      if (toVal) vitalsDateTo = toVal;
+      renderApp();
+    }
+
+    function applyVitalsDatePreset(days) {
+      vitalsDateTo = '2026-11-18';
+      if (days === 1) {
+        vitalsDateFrom = '2026-11-18';
+      } else if (days === 3) {
+        vitalsDateFrom = '2026-11-16';
+      } else {
+        vitalsDateFrom = '2026-11-12';
+      }
+      renderApp();
+    }
+
+    function dismissVitalsPrompt() {
+      vitalsPromptDismissed = true;
+      renderApp();
+    }
+
+    function getFilteredVitalLogs() {
+      return vitalLogs.filter(v => {
+        const inDateRange = (!vitalsDateFrom || v.date >= vitalsDateFrom) && (!vitalsDateTo || v.date <= vitalsDateTo);
+        if (!inDateRange) return false;
+        if (vitalsHistoryFilter === 'all') return true;
+        if (vitalsHistoryFilter === 'other') return ['temp', 'spo2', 'weight'].includes(v.type);
+        return v.type === vitalsHistoryFilter;
+      });
+    }
+
+    // ==========================================
+    // 7. MODALS (LOG VITAL SIGN & ADD MEDICATION)
+    // ==========================================
+    function openLogVitalModal(defaultType = 'bp') {
+      const backdrop = document.getElementById('modal-backdrop');
+      document.getElementById('modal-subtitle').textContent = 'Health & Vitals Tracker';
+      document.getElementById('modal-title').textContent = 'Log Vital Sign';
+
+      const body = document.getElementById('modal-body');
+      body.innerHTML = `
+        <form onsubmit="handleLogVitalSubmit(event)" class="space-y-3.5">
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1.5">Vital Sign Category</label>
+            <select id="vital-type-select" onchange="renderVitalInputFields()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800 focus:outline-none focus:border-brand-500">
+              <option value="bp" ${defaultType === 'bp' ? 'selected' : ''}>❤️ Blood Pressure (mmHg)</option>
+              <option value="sugar" ${defaultType === 'sugar' ? 'selected' : ''}>🩸 Blood Sugar / Glucose</option>
+              <option value="pulse" ${defaultType === 'pulse' ? 'selected' : ''}>💓 Pulse / Heart Rate (bpm)</option>
+              <option value="temp" ${defaultType === 'temp' ? 'selected' : ''}>🌡️ Body Temperature (°C)</option>
+              <option value="spo2" ${defaultType === 'spo2' ? 'selected' : ''}>🫁 Oxygen Saturation SpO2 (%)</option>
+              <option value="weight" ${defaultType === 'weight' ? 'selected' : ''}>⚖️ Body Weight (kg)</option>
+            </select>
+          </div>
+
+          <div id="vital-dynamic-fields"></div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Optional Note / Symptoms</label>
+            <input id="vital-note-input" type="text" placeholder="e.g., 1 hr after Losartan, feeling great" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-brand-500" />
+          </div>
+
+          <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs py-3 rounded-xl shadow-md shadow-brand-600/20 transition active:scale-95">
+            Save Vital Reading
+          </button>
+        </form>
+      `;
+
+      renderVitalInputFields();
+      backdrop.classList.remove('hidden');
+    }
+
+    function renderVitalInputFields() {
+      const type = document.getElementById('vital-type-select').value;
+      const container = document.getElementById('vital-dynamic-fields');
+
+      if (type === 'bp') {
+        container.innerHTML = `
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">Systolic</label>
+              <input id="vital-bp-sys" type="number" required min="60" max="250" value="120" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">Diastolic</label>
+              <input id="vital-bp-dia" type="number" required min="40" max="150" value="78" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">Pulse (opt)</label>
+              <input id="vital-bp-pulse" type="number" min="35" max="220" placeholder="72" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-semibold text-slate-900 focus:outline-none focus:border-brand-500" />
+            </div>
+          </div>
+          <div class="mt-2.5">
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">Measurement Posture</label>
+            <select id="vital-context-input" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium">
+              <option value="Resting • Sitting">Resting • Sitting</option>
+              <option value="Morning (Before Meds)">Morning (Before Meds)</option>
+              <option value="Evening">Evening</option>
+            </select>
+          </div>
+        `;
+      } else if (type === 'sugar') {
+        container.innerHTML = `
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">Glucose Value</label>
+              <input id="vital-sugar-val" type="number" step="0.1" required min="20" max="600" value="${glucoseUnit === 'mmol/L' ? '5.6' : '102'}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">Unit</label>
+              <select id="vital-sugar-unit" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold">
+                <option value="mg/dL" ${glucoseUnit === 'mg/dL' ? 'selected' : ''}>mg/dL</option>
+                <option value="mmol/L" ${glucoseUnit === 'mmol/L' ? 'selected' : ''}>mmol/L</option>
+              </select>
+            </div>
+          </div>
+          <div class="mt-2.5">
+            <label class="block text-[11px] font-bold text-slate-700 mb-1">Meal Timing Context</label>
+            <select id="vital-context-input" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium">
+              <option value="Fasting">Fasting (8+ hrs no food)</option>
+              <option value="Before Meal">Before Meal</option>
+              <option value="2h After Meal">2 Hours After Meal</option>
+              <option value="Bedtime">Bedtime</option>
+            </select>
+          </div>
+        `;
+      } else {
+        const meta = {
+          pulse: { label: 'Heart Rate (bpm)', defaultVal: '74', step: '1', ctx: ['Resting', 'After Walk', 'Morning'] },
+          temp: { label: 'Temperature (°C)', defaultVal: '36.8', step: '0.1', ctx: ['Oral', 'Forehead', 'Ear'] },
+          spo2: { label: 'Oxygen Saturation (%)', defaultVal: '98', step: '1', ctx: ['Resting', 'Post-Exercise'] },
+          weight: { label: 'Weight (kg)', defaultVal: '68.2', step: '0.1', ctx: ['Morning Fasting', 'Evening'] }
+        }[type];
+
+        container.innerHTML = `
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">${meta.label}</label>
+              <input id="vital-single-val" type="number" step="${meta.step}" required value="${meta.defaultVal}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold text-slate-900 focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-[11px] font-bold text-slate-700 mb-1">Context</label>
+              <select id="vital-context-input" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium">
+                ${meta.ctx.map(c => `<option value="${c}">${c}</option>`).join('')}
+              </select>
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function handleLogVitalSubmit(e) {
+      e.preventDefault();
+      const type = document.getElementById('vital-type-select').value;
+      const context = document.getElementById('vital-context-input')?.value || 'Resting';
+      const note = document.getElementById('vital-note-input')?.value.trim() || '';
+      const timeStr = formatMinutesTo12h(simulatedMinutesNow);
+      const dateStr = '2026-11-18';
+      const dateLabel = `Today, ${timeStr}`;
+
+      if (type === 'bp') {
+        const sys = parseInt(document.getElementById('vital-bp-sys').value, 10);
+        const dia = parseInt(document.getElementById('vital-bp-dia').value, 10);
+        const pulseOpt = parseInt(document.getElementById('vital-bp-pulse').value, 10);
+
+        vitalLogs.unshift({
+          id: 'v-' + Date.now(),
+          type: 'bp',
+          sys,
+          dia,
+          pulse: isNaN(pulseOpt) ? null : pulseOpt,
+          date: dateStr,
+          dateLabel,
+          context,
+          note
+        });
+
+        if (!isNaN(pulseOpt)) {
+          vitalLogs.unshift({
+            id: 'v-p-' + Date.now(),
+            type: 'pulse',
+            value: pulseOpt,
+            date: dateStr,
+            dateLabel,
+            context: 'With BP reading',
+            note
+          });
+        }
+        selectedTrendVital = 'bp';
+        showToast(`❤️ Logged BP: ${sys}/${dia} mmHg`);
+      } else if (type === 'sugar') {
+        const rawVal = parseFloat(document.getElementById('vital-sugar-val').value);
+        const unit = document.getElementById('vital-sugar-unit').value;
+        const valueMgDl = unit === 'mmol/L' ? Math.round(rawVal * 18.0182) : rawVal;
+
+        vitalLogs.unshift({
+          id: 'v-' + Date.now(),
+          type: 'sugar',
+          valueMgDl,
+          date: dateStr,
+          dateLabel,
+          context,
+          note
+        });
+        selectedTrendVital = 'sugar';
+        showToast(`🩸 Logged Blood Sugar: ${rawVal} ${unit}`);
+      } else {
+        const val = parseFloat(document.getElementById('vital-single-val').value);
+        vitalLogs.unshift({
+          id: 'v-' + Date.now(),
+          type,
+          value: val,
+          date: dateStr,
+          dateLabel,
+          context,
+          note
+        });
+        if (type === 'pulse') selectedTrendVital = 'pulse';
+        showToast(`✓ Logged ${type.toUpperCase()}: ${val}`);
+      }
+
+      closeModal();
+      renderApp();
+    }
+
+    function openAddMedModal() {
+      const backdrop = document.getElementById('modal-backdrop');
+      document.getElementById('modal-subtitle').textContent = 'Smart Regimen Setup';
+      document.getElementById('modal-title').textContent = 'Add Medication';
+
+      const body = document.getElementById('modal-body');
+      body.innerHTML = `
+        <!-- Zero-Cost On-Device OCR Scanner Banner -->
+        <div class="bg-gradient-to-r from-slate-900 to-slate-800 text-white rounded-2xl p-3 border border-slate-700">
+          <div class="flex items-center justify-between gap-2">
+            <div>
+              <p class="text-[10px] font-bold uppercase tracking-wider text-brand-400">Free On-Device ML Kit OCR</p>
+              <p class="text-xs font-semibold mt-0.5">Snap Rx or Pill Bottle Label</p>
+            </div>
+            <button type="button" onclick="simulateOcrBottleScan()" class="bg-brand-600 hover:bg-brand-500 text-white text-[11px] font-bold px-3 py-2 rounded-xl flex items-center gap-1.5 transition active:scale-95 shrink-0">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 9a2 2 0 012-2h.93a2 2 0 001.664-.89l.812-1.22A2 2 0 0110.07 4h3.86a2 2 0 011.664.89l.812 1.22A2 2 0 0018.07 7H19a2 2 0 012 2v9a2 2 0 01-2 2H5a2 2 0 01-2-2V9z"/><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M15 13a3 3 0 11-6 0 3 3 0 016 0z"/></svg>
+              Scan Label
+            </button>
+          </div>
+          <div id="ocr-preview-box" class="hidden mt-2.5 pt-2 border-t border-slate-700/80">
+            <p class="text-[10px] text-slate-400 font-semibold mb-1">Extracted Label Text (Offline Regex):</p>
+            <pre id="ocr-raw-text" class="text-[10px] font-mono text-brand-200 bg-slate-950/60 p-2 rounded-lg whitespace-pre-wrap leading-relaxed"></pre>
+          </div>
+        </div>
+
+        <form onsubmit="handleAddMedication(event)" class="space-y-3.5">
+          <div class="grid grid-cols-3 gap-2">
+            <div class="col-span-2">
+              <label class="block text-xs font-bold text-slate-700 mb-1">Medicine Name</label>
+              <input id="add-med-name" type="text" required placeholder="e.g., Vitamin D3" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Strength</label>
+              <input id="add-med-strength" type="text" required placeholder="1000 IU" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand-500" />
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Pill Shape</label>
+              <select id="add-med-shape" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium">
+                <option value="round">Round Tablet</option>
+                <option value="oval">Oval Scored</option>
+                <option value="capsule">Capsule</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Color Tag</label>
+              <select id="add-med-color" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium">
+                <option value="teal">Teal</option>
+                <option value="amber">Amber</option>
+                <option value="rose">Coral Red</option>
+                <option value="blue">Sky Blue</option>
+                <option value="indigo">Indigo</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="grid grid-cols-3 gap-2">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Dose Qty</label>
+              <input id="add-med-qty" type="number" step="0.25" min="0.25" required value="1" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Unit</label>
+              <select id="add-med-unit" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-medium">
+                <option value="tablet">tablet</option>
+                <option value="capsule">capsule</option>
+                <option value="ml">ml</option>
+                <option value="drop">drop</option>
+                <option value="puff">puff</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Stock Pcs</label>
+              <input id="add-med-stock" type="number" min="1" required value="30" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold focus:outline-none focus:border-brand-500" />
+            </div>
+          </div>
+
+          <!-- Two-Step Meal / Routine Context Dropdown -->
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Meal / Routine Context</label>
+              <select id="add-meal-required" onchange="toggleMealTimingField()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-brand-500">
+                <option value="with_meal">With Meal</option>
+                <option value="no_meal">No Meal Necessary</option>
+              </select>
+            </div>
+            <div id="meal-timing-wrapper">
+              <label class="block text-xs font-bold text-slate-700 mb-1">Meal Timing</label>
+              <select id="add-meal-timing" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-brand-500">
+                <option value="Before Meal">Before Meal</option>
+                <option value="After Meal">After Meal</option>
+              </select>
+            </div>
+          </div>
+
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Schedule Type</label>
+            <select id="add-schedule-type" onchange="toggleScheduleFields()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand-500">
+              <option value="fixed">Fixed Daily Time</option>
+              <option value="interval">Interval-Based (Auto-Shifts if taken late)</option>
+              <option value="prn">As Needed (PRN with Cooldown)</option>
+            </select>
+          </div>
+
+          <div id="schedule-dynamic-fields"></div>
+
+          <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs py-3 rounded-xl shadow-md shadow-brand-600/20 transition active:scale-95">
+            Save Medication & Schedule
+          </button>
+        </form>
+      `;
+
+      toggleScheduleFields();
+      toggleMealTimingField();
+      backdrop.classList.remove('hidden');
+    }
+
+    function toggleScheduleFields() {
+      const type = document.getElementById('add-schedule-type')?.value;
+      const container = document.getElementById('schedule-dynamic-fields');
+      if (!container) return;
+
+      if (type === 'fixed') {
+        container.innerHTML = `
+          <div>
+            <label class="block text-xs font-bold text-slate-700 mb-1">Daily Time</label>
+            <input id="add-fixed-time" type="time" value="09:00" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand-500" />
+          </div>
+        `;
+      } else if (type === 'interval') {
+        container.innerHTML = `
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Start Time</label>
+              <input id="add-interval-start" type="time" value="08:00" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Repeat Every (Hours)</label>
+              <select id="add-interval-hours" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-semibold focus:outline-none focus:border-brand-500">
+                <option value="6">Every 6 hours</option>
+                <option value="8" selected>Every 8 hours</option>
+                <option value="12">Every 12 hours</option>
+              </select>
+            </div>
+          </div>
+        `;
+      } else {
+        container.innerHTML = `
+          <div class="grid grid-cols-2 gap-2">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Cooldown (Hours)</label>
+              <input id="add-cooldown" type="number" min="1" max="24" value="4" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-brand-500" />
+            </div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Max Intakes / Day</label>
+              <input id="add-maxday" type="number" min="1" max="12" value="4" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-medium focus:outline-none focus:border-brand-500" />
+            </div>
+          </div>
+        `;
+      }
+    }
+
+    function toggleMealTimingField() {
+      const mealReq = document.getElementById('add-meal-required')?.value;
+      const wrapper = document.getElementById('meal-timing-wrapper');
+      if (wrapper) {
+        wrapper.classList.toggle('hidden', mealReq !== 'with_meal');
+      }
+    }
+
+    function closeModal() {
+      const backdrop = document.getElementById('modal-backdrop');
+      if (backdrop) backdrop.classList.add('hidden');
+    }
+
+    function handleAddMedication(e) {
+      e.preventDefault();
+      const name = document.getElementById('add-med-name').value.trim();
+      const strength = document.getElementById('add-med-strength').value.trim();
+      const shape = document.getElementById('add-med-shape').value;
+      const color = document.getElementById('add-med-color').value;
+      const doseQty = parseFloat(document.getElementById('add-med-qty').value) || 1;
+      const unit = document.getElementById('add-med-unit').value;
+      const stockTotal = parseFloat(document.getElementById('add-med-stock').value) || 30;
+      const mealRequired = document.getElementById('add-meal-required').value;
+      const mealTiming = document.getElementById('add-meal-timing')?.value || 'Before Meal';
+      const mealTag = mealRequired === 'with_meal' ? mealTiming : 'No Meal Necessary';
+      const scheduleType = document.getElementById('add-schedule-type').value;
+
+      const newMedId = 'med-' + Date.now();
+      const newMed = {
+        id: newMedId,
+        name,
+        strength,
+        shape,
+        color,
+        doseQty,
+        unit,
+        scheduleType,
+        mealTag,
+        instruction: `${mealTag} • ${formatQuantity(doseQty, unit)}`,
+        stockRemaining: stockTotal,
+        stockTotal,
+        lowStockThreshold: Math.max(3, Math.round(stockTotal * 0.2))
+      };
+
+      if (scheduleType === 'fixed') {
+        const timeStr = document.getElementById('add-fixed-time')?.value || '09:00';
+        const mins = parse24hToMinutes(timeStr);
+        newMed.fixedTimes = [timeStr];
+        doses.push({
+          id: 'dose-' + Date.now(),
+          medId: newMedId,
+          scheduledMinutes: mins,
+          originalMinutes: mins,
+          status: 'pending',
+          takenAtStr: null,
+          shiftNote: null
+        });
+      } else if (scheduleType === 'interval') {
+        const startStr = document.getElementById('add-interval-start')?.value || '08:00';
+        const intervalHrs = parseInt(document.getElementById('add-interval-hours')?.value || '8', 10);
+        const startMins = parse24hToMinutes(startStr);
+        newMed.intervalHours = intervalHrs;
+        newMed.instruction = `Starts ${formatMinutesTo12h(startMins)} • Every ${intervalHrs}h`;
+
+        let currentMins = startMins;
+        let idx = 0;
+        while (currentMins < 24 * 60 && idx < 4) {
+          doses.push({
+            id: `dose-${Date.now()}-${idx}`,
+            medId: newMedId,
+            scheduledMinutes: currentMins,
+            originalMinutes: currentMins,
+            status: 'pending',
+            takenAtStr: null,
+            shiftNote: null
+          });
+          currentMins += intervalHrs * 60;
+          idx += 1;
+        }
+      } else {
+        const cooldown = parseInt(document.getElementById('add-cooldown')?.value || '4', 10);
+        const maxDay = parseInt(document.getElementById('add-maxday')?.value || '4', 10);
+        newMed.cooldownHours = cooldown;
+        newMed.maxPerDay = maxDay;
+        newMed.takenTodayCount = 0;
+        newMed.cooldownRemainingSeconds = 0;
+        newMed.instruction = `Max ${maxDay}/day • ${cooldown}h cooldown`;
+      }
+
+      medications.push(newMed);
+      closeModal();
+      showToast(`✓ Added ${name} ${strength} to regimen!`);
+      renderApp();
+    }
+
+    // ==========================================
+    // 8. TAB RENDERERS
+    // ==========================================
+    function switchTab(tab) {
+      currentTab = tab;
+      document.querySelectorAll('.nav-btn').forEach(btn => {
+        const isActive = btn.getAttribute('data-tab') === tab;
+        btn.classList.toggle('text-brand-600', isActive);
+        btn.classList.toggle('text-slate-400', !isActive);
+      });
+      renderApp();
+    }
+
+    function renderTodayTab() {
+      const groups = { Morning: [], Afternoon: [], Evening: [] };
+      const sortedDoses = [...doses].sort((a, b) => a.scheduledMinutes - b.scheduledMinutes);
+      sortedDoses.forEach(d => {
+        const g = getTimeOfDayGroup(d.scheduledMinutes);
+        groups[g].push(d);
+      });
+
+      const prnMeds = medications.filter(m => m.scheduleType === 'prn');
+      let html = '';
+
+      if (!vitalsPromptDismissed) {
+        html += `
+          <div class="bg-gradient-to-r from-teal-900 to-slate-900 text-white rounded-3xl p-3.5 shadow-sm border border-teal-800/70 flex items-center justify-between gap-2.5">
+            <div class="flex items-center gap-2.5 min-w-0">
+              <div class="w-10 h-10 rounded-2xl bg-brand-500/20 border border-brand-400/30 flex items-center justify-center text-lg shrink-0">
+                🩺
+              </div>
+              <div class="min-w-0">
+                <p class="text-[10px] font-bold uppercase tracking-wider text-brand-300">Morning Check-In</p>
+                <p class="text-xs font-semibold text-white leading-snug">Log Blood Pressure or Fasting Blood Sugar</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-1 shrink-0">
+              <button onclick="openLogVitalModal('bp')" class="bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-bold px-2.5 py-2 rounded-xl transition active:scale-95">
+                + Log
+              </button>
+              <button onclick="dismissVitalsPrompt()" class="text-slate-400 hover:text-white p-1" title="Dismiss">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+          </div>
+        `;
+      }
+
+      for (const [period, periodDoses] of Object.entries(groups)) {
+        if (periodDoses.length === 0) continue;
+        const periodIcon = period === 'Morning' ? '🌅' : period === 'Afternoon' ? '☀️' : '🌙';
+
+        html += `
+          <section class="space-y-2.5">
+            <div class="flex items-center justify-between px-1">
+              <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <span>${periodIcon}</span> ${period}
+              </h2>
+              <span class="text-[11px] font-medium text-slate-400">${periodDoses.length} dose${periodDoses.length > 1 ? 's' : ''}</span>
+            </div>
+            <div class="space-y-3">
+              ${periodDoses.map(dose => {
+                const med = medications.find(m => m.id === dose.medId);
+                if (!med) return '';
+                const isTaken = dose.status === 'taken';
+                const isLowStock = med.stockRemaining <= med.lowStockThreshold;
+                const colorObj = PILL_COLORS[med.color] || PILL_COLORS.teal;
+                const timeLabel = formatMinutesTo12h(dose.scheduledMinutes);
+                const qtyLabel = formatQuantity(med.doseQty, med.unit);
+
+                return `
+                  <div class="bg-white rounded-3xl p-4 border ${isTaken ? 'border-emerald-200/80 bg-emerald-50/20' : 'border-slate-200/80'} shadow-sm transition">
+                    <div class="flex items-start justify-between gap-2.5">
+                      <div class="flex items-start gap-3 min-w-0">
+                        <div class="w-10 h-10 rounded-2xl ${colorObj.bg} flex items-center justify-center shrink-0">
+                          ${renderPillSVG(med.shape, med.color, 26)}
+                        </div>
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-1.5 flex-wrap">
+                            <h3 class="font-bold text-slate-900 text-sm ${isTaken ? 'line-through text-slate-500' : ''}">${med.name}</h3>
+                            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${med.strength}</span>
+                          </div>
+                          <div class="flex items-center gap-1.5 flex-wrap mt-1">
+                            <span class="text-xs font-bold text-brand-700">Take ${qtyLabel}</span>
+                            ${med.mealTag ? `<span class="text-[10px] font-semibold px-2 py-0.5 rounded-md bg-teal-50 text-teal-800 border border-teal-200/60">🍽️ ${med.mealTag}</span>` : ''}
+                            ${isLowStock ? `<span class="text-[10px] font-bold px-2 py-0.5 rounded-md bg-amber-100 text-amber-800">Low: ${med.stockRemaining} left</span>` : ''}
+                          </div>
+                          <p class="text-[11px] text-slate-500 mt-1">${med.instruction}</p>
+                        </div>
+                      </div>
+
+                      <div class="text-right shrink-0">
+                        <span class="inline-block text-xs font-bold ${isTaken ? 'text-emerald-700 bg-emerald-100' : 'text-slate-700 bg-slate-100'} px-2.5 py-1 rounded-xl">
+                          ${timeLabel}
+                        </span>
+                        ${isTaken ? `<p class="text-[10px] font-semibold text-emerald-600 mt-1">✓ ${dose.takenAtStr}</p>` : ''}
+                      </div>
+                    </div>
+
+                    ${dose.shiftNote ? `
+                      <div class="mt-3 bg-amber-50 border border-amber-200/80 rounded-2xl px-3 py-2 flex items-center gap-2 text-[11px] font-medium text-amber-800">
+                        <span>⏱️</span>
+                        <span>${dose.shiftNote}</span>
+                      </div>
+                    ` : ''}
+
+                    ${!isTaken ? `
+                      <div class="mt-3.5 pt-3 border-t border-slate-100 flex flex-wrap items-center gap-2">
+                        <button onclick="takeScheduledDose('${dose.id}', 0)" class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold py-2 px-3 rounded-xl shadow-sm transition active:scale-95">
+                          ✓ Take Now
+                        </button>
+                        ${med.scheduleType === 'interval' ? `
+                          <button onclick="takeScheduledDose('${dose.id}', 90)" class="bg-amber-50 hover:bg-amber-100 text-amber-800 border border-amber-200 text-[11px] font-semibold py-2 px-2.5 rounded-xl transition active:scale-95">
+                            Late (+90m)
+                          </button>
+                        ` : ''}
+                        <button onclick="snoozeDose('${dose.id}')" class="bg-slate-100 hover:bg-slate-200 text-slate-600 text-xs font-semibold py-2 px-2.5 rounded-xl transition active:scale-95">
+                          Snooze
+                        </button>
+                      </div>
+                    ` : ''}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </section>
+        `;
+      }
+
+      if (prnMeds.length > 0) {
+        html += `
+          <section class="space-y-2.5 pt-1">
+            <div class="flex items-center justify-between px-1">
+              <h2 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-1.5">
+                <span>🩹</span> As Needed (PRN)
+              </h2>
+              <span class="text-[11px] font-medium text-slate-400">Safety Cooldown Active</span>
+            </div>
+            <div class="space-y-3">
+              ${prnMeds.map(med => {
+                const qtyLabel = formatQuantity(med.doseQty, med.unit);
+                const inCooldown = med.cooldownRemainingSeconds > 0;
+                const limitReached = med.takenTodayCount >= med.maxPerDay;
+                const colorObj = PILL_COLORS[med.color] || PILL_COLORS.amber;
+
+                return `
+                  <div class="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm">
+                    <div class="flex items-start justify-between gap-2.5">
+                      <div class="flex items-start gap-3 min-w-0">
+                        <div class="w-10 h-10 rounded-2xl ${colorObj.bg} flex items-center justify-center shrink-0">
+                          ${renderPillSVG(med.shape, med.color, 26)}
+                        </div>
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-1.5 flex-wrap">
+                            <h3 class="font-bold text-slate-900 text-sm">${med.name}</h3>
+                            <span class="text-[11px] font-semibold px-2 py-0.5 rounded-full bg-slate-100 text-slate-600">${med.strength}</span>
+                          </div>
+                          <p class="text-xs font-bold text-brand-700 mt-0.5">${qtyLabel} per intake</p>
+                          <p class="text-[11px] text-slate-500 mt-0.5">${med.instruction}</p>
+                        </div>
+                      </div>
+                      <span class="inline-block text-[11px] font-bold px-2.5 py-1 rounded-xl shrink-0 ${limitReached ? 'bg-rose-100 text-rose-700' : 'bg-slate-100 text-slate-700'}">
+                        ${med.takenTodayCount} / ${med.maxPerDay} today
+                      </span>
+                    </div>
+
+                    ${inCooldown ? `
+                      <div class="mt-3 bg-slate-900 text-white rounded-2xl p-3 flex items-center justify-between">
+                        <div>
+                          <p class="text-[10px] uppercase tracking-wider text-slate-400 font-semibold">Safety Cooldown Active</p>
+                          <p class="text-sm font-bold text-amber-400 font-mono mt-0.5">${formatSeconds(med.cooldownRemainingSeconds)}</p>
+                        </div>
+                        <button onclick="skipPrnCooldown('${med.id}')" class="text-[11px] font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 px-2.5 py-1.5 rounded-xl border border-slate-700">
+                          Skip Timer
+                        </button>
+                      </div>
+                    ` : `
+                      <div class="mt-3.5 pt-3 border-t border-slate-100">
+                        <button onclick="takePrnDose('${med.id}')" ${limitReached ? 'disabled' : ''} class="w-full ${limitReached ? 'bg-slate-200 text-slate-400 cursor-not-allowed' : 'bg-slate-900 hover:bg-slate-800 text-white'} text-xs font-semibold py-2.5 rounded-xl transition active:scale-95">
+                          ${limitReached ? 'Daily Maximum Reached' : `+ Log PRN Dose (${qtyLabel})`}
+                        </button>
+                      </div>
+                    `}
+                  </div>
+                `;
+              }).join('')}
+            </div>
+          </section>
+        `;
+      }
+
+      return html;
+    }
+
+    function renderVitalsTrendChart() {
+      const logs = vitalLogs.filter(v => v.type === selectedTrendVital).slice(0, 7).reverse();
+      if (logs.length < 2) {
+        return `<div class="h-28 flex items-center justify-center text-xs text-slate-400">Log at least 2 readings to view trend graph</div>`;
+      }
+
+      const width = 310;
+      const height = 105;
+      const padX = 22;
+      const padY = 18;
+
+      if (selectedTrendVital === 'bp') {
+        const allVals = logs.flatMap(l => [l.sys, l.dia]);
+        const minV = Math.min(...allVals) - 8;
+        const maxV = Math.max(...allVals) + 8;
+        const getX = idx => padX + (idx / (logs.length - 1)) * (width - padX * 2);
+        const getY = val => height - padY - ((val - minV) / (maxV - minV || 1)) * (height - padY * 2);
+
+        const sysPoints = logs.map((l, i) => `${getX(i)},${getY(l.sys)}`).join(' ');
+        const diaPoints = logs.map((l, i) => `${getX(i)},${getY(l.dia)}`).join(' ');
+
+        return `
+          <svg viewBox="0 0 ${width} ${height}" class="w-full h-28 overflow-visible">
+            <polyline fill="none" stroke="#e11d48" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${sysPoints}" />
+            <polyline fill="none" stroke="#0284c7" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${diaPoints}" />
+            ${logs.map((l, i) => `
+              <circle cx="${getX(i)}" cy="${getY(l.sys)}" r="3.5" fill="#e11d48" />
+              <text x="${getX(i)}" y="${getY(l.sys) - 6}" text-anchor="middle" font-size="8.5" font-weight="700" fill="#be123c">${l.sys}</text>
+              <circle cx="${getX(i)}" cy="${getY(l.dia)}" r="3.5" fill="#0284c7" />
+              <text x="${getX(i)}" y="${getY(l.dia) + 12}" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0369a1">${l.dia}</text>
+            `).join('')}
+          </svg>
+          <div class="flex items-center justify-center gap-4 text-[10px] font-bold mt-1">
+            <span class="text-rose-600 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-rose-600"></span> Systolic</span>
+            <span class="text-sky-600 flex items-center gap-1"><span class="w-2 h-2 rounded-full bg-sky-600"></span> Diastolic</span>
+          </div>
+        `;
+      }
+
+      const values = logs.map(l => selectedTrendVital === 'sugar' ? Number(formatGlucoseValue(l.valueMgDl)) : Number(l.value));
+      const minV = Math.min(...values) - (selectedTrendVital === 'sugar' && glucoseUnit === 'mmol/L' ? 0.5 : 5);
+      const maxV = Math.max(...values) + (selectedTrendVital === 'sugar' && glucoseUnit === 'mmol/L' ? 0.5 : 5);
+      const getX = idx => padX + (idx / (logs.length - 1)) * (width - padX * 2);
+      const getY = val => height - padY - ((val - minV) / (maxV - minV || 1)) * (height - padY * 2);
+      const points = values.map((v, i) => `${getX(i)},${getY(v)}`).join(' ');
+      const strokeColor = selectedTrendVital === 'sugar' ? '#d97706' : '#0d9488';
+
+      return `
+        <svg viewBox="0 0 ${width} ${height}" class="w-full h-28 overflow-visible">
+          <polyline fill="none" stroke="${strokeColor}" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="${points}" />
+          ${values.map((v, i) => `
+            <circle cx="${getX(i)}" cy="${getY(v)}" r="3.5" fill="${strokeColor}" />
+            <text x="${getX(i)}" y="${getY(v) - 7}" text-anchor="middle" font-size="9" font-weight="700" fill="#334155">${v}</text>
+          `).join('')}
+        </svg>
+      `;
+    }
+
+    function renderVitalsTab() {
+      const latestBp = vitalLogs.find(v => v.type === 'bp');
+      const latestSugar = vitalLogs.find(v => v.type === 'sugar');
+      const latestPulse = vitalLogs.find(v => v.type === 'pulse');
+      const latestTemp = vitalLogs.find(v => v.type === 'temp');
+      const latestSpo2 = vitalLogs.find(v => v.type === 'spo2');
+      const latestWeight = vitalLogs.find(v => v.type === 'weight');
+
+      const bpStatus = getVitalStatus('bp', latestBp);
+      const sugarStatus = getVitalStatus('sugar', latestSugar);
+      const pulseStatus = getVitalStatus('pulse', latestPulse);
+
+      const filteredLogs = getFilteredVitalLogs();
+
+      const formatVitalRow = v => {
+        if (v.type === 'bp') return { icon: '❤️', label: 'Blood Pressure', val: `${v.sys}/${v.dia} mmHg${v.pulse ? ` • ${v.pulse} bpm` : ''}`, status: getVitalStatus('bp', v) };
+        if (v.type === 'sugar') return { icon: '🩸', label: 'Blood Sugar', val: `${formatGlucoseValue(v.valueMgDl)} ${glucoseUnit}`, status: getVitalStatus('sugar', v) };
+        if (v.type === 'pulse') return { icon: '💓', label: 'Pulse Rate', val: `${v.value} bpm`, status: getVitalStatus('pulse', v) };
+        if (v.type === 'temp') return { icon: '🌡️', label: 'Temperature', val: `${v.value} °C`, status: getVitalStatus('temp', v) };
+        if (v.type === 'spo2') return { icon: '🫁', label: 'SpO2 Oxygen', val: `${v.value}%`, status: getVitalStatus('spo2', v) };
+        return { icon: '⚖️', label: 'Body Weight', val: `${v.value} kg`, status: getVitalStatus('weight', v) };
+      };
+
+      return `
+        <div class="space-y-4">
+          <!-- Primary Action CTA + Unit Switcher -->
+          <div class="flex items-center justify-between gap-2">
+            <button onclick="openLogVitalModal('bp')" class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold py-2.5 px-3.5 rounded-2xl shadow-sm shadow-brand-600/20 flex items-center justify-center gap-1.5 transition active:scale-95">
+              <span>🩺</span> + Log Vital Sign
+            </button>
+            <button onclick="toggleGlucoseUnit()" class="bg-white hover:bg-slate-50 border border-slate-200 text-slate-700 text-[11px] font-bold px-3 py-2.5 rounded-2xl transition shrink-0">
+              Glucose: <span class="text-brand-600">${glucoseUnit}</span>
+            </button>
+          </div>
+
+          <!-- Primary Vitals Summary Cards (Original Full-Width BP + 2-Col Sugar/Pulse) -->
+          <div class="grid grid-cols-1 gap-2.5">
+            <div onclick="selectTrendVital('bp')" class="cursor-pointer bg-white rounded-3xl p-3.5 border ${selectedTrendVital === 'bp' ? 'border-brand-500 ring-2 ring-brand-500/15' : 'border-slate-200/80'} shadow-sm transition">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2.5">
+                  <div class="w-9 h-9 rounded-2xl bg-rose-50 text-rose-600 flex items-center justify-center text-base font-bold shrink-0">❤️</div>
+                  <div>
+                    <p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Blood Pressure</p>
+                    <div class="flex items-baseline gap-1.5 mt-0.5">
+                      <span class="text-lg font-extrabold text-slate-900">${latestBp ? `${latestBp.sys}/${latestBp.dia}` : '--/--'}</span>
+                      <span class="text-[11px] font-medium text-slate-400">mmHg</span>
+                    </div>
+                  </div>
+                </div>
+                <div class="text-right shrink-0">
+                  <span class="inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full ${bpStatus.badge}">${bpStatus.label}</span>
+                  <p class="text-[10px] text-slate-400 mt-1">${latestBp ? latestBp.dateLabel : 'No reading'}</p>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-2 gap-2.5">
+              <div onclick="selectTrendVital('sugar')" class="cursor-pointer bg-white rounded-3xl p-3.5 border ${selectedTrendVital === 'sugar' ? 'border-brand-500 ring-2 ring-brand-500/15' : 'border-slate-200/80'} shadow-sm transition flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="w-8 h-8 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center text-sm">🩸</span>
+                  <span class="text-[9px] font-bold px-2 py-0.5 rounded-full ${sugarStatus.badge}">${sugarStatus.label}</span>
+                </div>
+                <div>
+                  <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Blood Sugar</p>
+                  <p class="text-base font-extrabold text-slate-900 mt-0.5">${latestSugar ? `${formatGlucoseValue(latestSugar.valueMgDl)} ${glucoseUnit}` : '--'}</p>
+                  <p class="text-[10px] text-slate-500 mt-0.5 truncate">${latestSugar ? latestSugar.context : 'Tap to log'}</p>
+                </div>
+              </div>
+
+              <div onclick="selectTrendVital('pulse')" class="cursor-pointer bg-white rounded-3xl p-3.5 border ${selectedTrendVital === 'pulse' ? 'border-brand-500 ring-2 ring-brand-500/15' : 'border-slate-200/80'} shadow-sm transition flex flex-col justify-between">
+                <div class="flex items-center justify-between mb-1.5">
+                  <span class="w-8 h-8 rounded-xl bg-teal-50 text-teal-600 flex items-center justify-center text-sm">💓</span>
+                  <span class="text-[9px] font-bold px-2 py-0.5 rounded-full ${pulseStatus.badge}">${pulseStatus.label}</span>
+                </div>
+                <div>
+                  <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Pulse Rate</p>
+                  <p class="text-base font-extrabold text-slate-900 mt-0.5">${latestPulse ? `${latestPulse.value} <span class="text-xs font-medium text-slate-400">bpm</span>` : '--'}</p>
+                  <p class="text-[10px] text-slate-500 mt-0.5 truncate">${latestPulse ? latestPulse.context : 'Tap to log'}</p>
+                </div>
+              </div>
+            </div>
+
+            <!-- Secondary Vitals Strip -->
+            <div class="grid grid-cols-3 gap-2">
+              <button onclick="openLogVitalModal('temp')" class="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-2.5 text-left transition">
+                <p class="text-[10px] font-bold text-slate-400">🌡️ Temp</p>
+                <p class="text-xs font-extrabold text-slate-800 mt-0.5">${latestTemp ? `${latestTemp.value}°C` : '--'}</p>
+              </button>
+              <button onclick="openLogVitalModal('spo2')" class="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-2.5 text-left transition">
+                <p class="text-[10px] font-bold text-slate-400">🫁 SpO2</p>
+                <p class="text-xs font-extrabold text-slate-800 mt-0.5">${latestSpo2 ? `${latestSpo2.value}%` : '--'}</p>
+              </button>
+              <button onclick="openLogVitalModal('weight')" class="bg-white hover:bg-slate-50 border border-slate-200/80 rounded-2xl p-2.5 text-left transition">
+                <p class="text-[10px] font-bold text-slate-400">⚖️ Weight</p>
+                <p class="text-xs font-extrabold text-slate-800 mt-0.5">${latestWeight ? `${latestWeight.value} kg` : '--'}</p>
+              </button>
+            </div>
+          </div>
+
+          <!-- Interactive Trend Chart -->
+          <div class="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm">
+            <div class="flex items-center justify-between mb-2">
+              <div>
+                <h3 class="text-xs font-bold text-slate-800">
+                  ${selectedTrendVital === 'bp' ? 'Blood Pressure Trend' : selectedTrendVital === 'sugar' ? `Blood Sugar Trend (${glucoseUnit})` : 'Pulse Rate Trend (bpm)'}
+                </h3>
+                <p class="text-[10px] text-slate-400">Tap any card above to switch metric</p>
+              </div>
+              <span class="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-100 text-slate-600">Last 7</span>
+            </div>
+            ${renderVitalsTrendChart()}
+          </div>
+
+          <!-- Vitals History & Printable List Filter View -->
+          <div class="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm space-y-3">
+            <div class="flex items-center justify-between gap-2">
+              <h3 class="text-xs font-bold text-slate-900">Vital Sign Logs (${filteredLogs.length})</h3>
+              <div class="bg-slate-100 p-0.5 rounded-xl flex items-center text-[10px] font-bold shrink-0">
+                <button onclick="setVitalsViewMode('cards')" class="px-2.5 py-1 rounded-lg transition ${vitalsViewMode === 'cards' ? 'bg-white text-slate-900 shadow-2xs' : 'text-slate-500'}">Cards</button>
+                <button onclick="setVitalsViewMode('printable')" class="px-2.5 py-1 rounded-lg transition ${vitalsViewMode === 'printable' ? 'bg-white text-brand-700 shadow-2xs' : 'text-slate-500'}">Printable List</button>
+              </div>
+            </div>
+
+            <!-- Date Range Filter & Quick Presets -->
+            <div class="bg-slate-50 rounded-2xl p-2.5 border border-slate-200/80 space-y-2">
+              <div class="grid grid-cols-2 gap-2">
+                <div class="min-w-0">
+                  <label class="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">From Date</label>
+                  <input type="date" value="${vitalsDateFrom}" onchange="updateVitalsDateRange(this.value, null)" class="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-semibold text-slate-700" />
+                </div>
+                <div class="min-w-0">
+                  <label class="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">To Date</label>
+                  <input type="date" value="${vitalsDateTo}" onchange="updateVitalsDateRange(null, this.value)" class="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px] font-semibold text-slate-700" />
+                </div>
+              </div>
+              <div class="flex flex-wrap items-center justify-between gap-1.5 pt-0.5">
+                <div class="flex items-center gap-1">
+                  <button onclick="applyVitalsDatePreset(1)" class="text-[10px] font-semibold bg-white border border-slate-200 hover:border-brand-400 px-2 py-0.5 rounded-md">Today</button>
+                  <button onclick="applyVitalsDatePreset(3)" class="text-[10px] font-semibold bg-white border border-slate-200 hover:border-brand-400 px-2 py-0.5 rounded-md">Last 3d</button>
+                  <button onclick="applyVitalsDatePreset(7)" class="text-[10px] font-semibold bg-white border border-slate-200 hover:border-brand-400 px-2 py-0.5 rounded-md">7 Days</button>
+                </div>
+                ${vitalsViewMode === 'printable' ? `
+                  <button onclick="showToast('🖨️ Generated printable vitals table (${filteredLogs.length} rows)')" class="text-[10px] font-bold bg-slate-900 text-white px-2.5 py-1 rounded-lg flex items-center gap-1 active:scale-95">
+                    <span>🖨️ Print / PDF</span>
+                  </button>
+                ` : ''}
+              </div>
+            </div>
+
+            <!-- Category Filter Pills -->
+            <div class="flex items-center gap-1.5 overflow-x-auto pb-0.5">
+              ${[
+                { id: 'all', label: 'All' },
+                { id: 'bp', label: 'BP' },
+                { id: 'sugar', label: 'Sugar' },
+                { id: 'pulse', label: 'Pulse' },
+                { id: 'other', label: 'Other' }
+              ].map(f => `
+                <button onclick="setVitalsHistoryFilter('${f.id}')" class="text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 transition ${vitalsHistoryFilter === f.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600 hover:bg-slate-200'}">
+                  ${f.label}
+                </button>
+              `).join('')}
+            </div>
+
+            <!-- Logs Output -->
+            ${filteredLogs.length === 0 ? `
+              <p class="text-xs text-slate-400 text-center py-4">No vital sign logs match this date range.</p>
+            ` : vitalsViewMode === 'printable' ? `
+              <div class="overflow-x-auto border border-slate-200 rounded-2xl">
+                <table class="w-full text-left border-collapse">
+                  <thead>
+                    <tr class="bg-slate-100 text-[9px] font-bold uppercase text-slate-600 border-b border-slate-200">
+                      <th class="py-2 px-2">Date</th>
+                      <th class="py-2 px-2">Vital</th>
+                      <th class="py-2 px-2">Reading</th>
+                      <th class="py-2 px-2">Context</th>
+                    </tr>
+                  </thead>
+                  <tbody class="divide-y divide-slate-100 text-[10px]">
+                    ${filteredLogs.map(v => {
+                      const info = formatVitalRow(v);
+                      return `
+                        <tr class="hover:bg-slate-50">
+                          <td class="py-2 px-2 font-medium text-slate-500 whitespace-nowrap">${v.date.slice(5)}</td>
+                          <td class="py-2 px-2 font-bold text-slate-800">${info.label}</td>
+                          <td class="py-2 px-2 font-extrabold text-slate-900">${info.val}</td>
+                          <td class="py-2 px-2 text-slate-500">${v.context}</td>
+                        </tr>
+                      `;
+                    }).join('')}
+                  </tbody>
+                </table>
+              </div>
+            ` : `
+              <div class="space-y-2">
+                ${filteredLogs.map(v => {
+                  const info = formatVitalRow(v);
+                  return `
+                    <div class="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 flex items-center justify-between gap-2">
+                      <div class="flex items-center gap-2.5 min-w-0">
+                        <span class="text-base shrink-0">${info.icon}</span>
+                        <div class="min-w-0">
+                          <div class="flex items-center gap-1.5 flex-wrap">
+                            <p class="text-xs font-bold text-slate-900">${info.val}</p>
+                            <span class="text-[9px] font-bold px-2 py-0.5 rounded-full ${info.status.badge}">${info.status.label}</span>
+                          </div>
+                          <p class="text-[10px] text-slate-500 mt-0.5">${v.dateLabel} • ${v.context}</p>
+                          ${v.note ? `<p class="text-[10px] text-brand-700 mt-0.5">📝 ${v.note}</p>` : ''}
+                        </div>
+                      </div>
+                    </div>
+                  `;
+                }).join('')}
+              </div>
+            `}
+          </div>
+        </div>
+      `;
+    }
+
+    function renderCabinetTab() {
+      const cardsHtml = medications.map(med => {
+        const pct = Math.min(100, Math.round((med.stockRemaining / med.stockTotal) * 100));
+        const dailyUsage = med.scheduleType === 'fixed'
+          ? (med.fixedTimes?.length || 1) * med.doseQty
+          : med.scheduleType === 'interval'
+          ? Math.max(1, Math.floor(24 / med.intervalHours)) * med.doseQty
+          : med.doseQty;
+        const daysLeft = dailyUsage > 0 ? Math.floor(med.stockRemaining / dailyUsage) : 0;
+        const isLow = med.stockRemaining <= med.lowStockThreshold || (med.scheduleType !== 'prn' && daysLeft <= 5);
+        const colorObj = PILL_COLORS[med.color] || PILL_COLORS.teal;
+
+        return `
+          <div class="bg-white rounded-3xl p-4 border ${isLow ? 'border-amber-300 ring-2 ring-amber-500/10' : 'border-slate-200/80'} shadow-sm space-y-3">
+            <div class="flex items-start justify-between gap-2.5">
+              <div class="flex items-center gap-3 min-w-0">
+                <div class="w-10 h-10 rounded-2xl ${colorObj.bg} flex items-center justify-center shrink-0">
+                  ${renderPillSVG(med.shape, med.color, 26)}
+                </div>
+                <div class="min-w-0">
+                  <h3 class="font-bold text-slate-900 text-sm truncate">${med.name} <span class="text-xs font-medium text-slate-500">${med.strength}</span></h3>
+                  <p class="text-xs font-semibold ${isLow ? 'text-amber-700' : 'text-slate-600'} mt-0.5">
+                    ${med.stockRemaining} / ${med.stockTotal} ${med.unit}s left
+                  </p>
+                </div>
+              </div>
+              <button onclick="refillMedication('${med.id}', 30)" class="bg-brand-50 hover:bg-brand-100 text-brand-700 border border-brand-200 text-xs font-bold px-2.5 py-1.5 rounded-xl transition active:scale-95 shrink-0">
+                + Refill
+              </button>
+            </div>
+
+            <div class="w-full h-2 bg-slate-100 rounded-full overflow-hidden">
+              <div class="h-full ${isLow ? 'bg-amber-500' : 'bg-brand-500'} rounded-full transition-all duration-300" style="width: ${pct}%"></div>
+            </div>
+
+            <div class="flex items-center justify-between text-[11px] gap-2">
+              <span class="text-slate-400">Dose: ${formatQuantity(med.doseQty, med.unit)}</span>
+              ${isLow ? `
+                <span class="font-bold text-amber-700 bg-amber-100 px-2 py-0.5 rounded-lg">
+                  ⚠️ Low (${daysLeft}d left)
+                </span>
+              ` : `
+                <span class="font-medium text-emerald-600">✓ ~${daysLeft} days left</span>
+              `}
+            </div>
+          </div>
+        `;
+      }).join('');
+
+      return `
+        <div class="space-y-3">
+          <div class="bg-brand-50 border border-brand-200/80 rounded-2xl p-3.5 flex items-center gap-3">
+            <span class="text-xl shrink-0">📦</span>
+            <p class="text-xs text-brand-900 leading-relaxed">
+              Every time you log a dose, MedFlow automatically deducts exact pieces and calculates days remaining.
+            </p>
+          </div>
+          ${cardsHtml}
+        </div>
+      `;
+    }
+
+    function renderGuardianTab() {
+      const activeAlerts = guardianAlerts.filter(a => !a.acknowledged);
+
+      return `
+        <div class="space-y-3.5">
+          <!-- Dual-Mode Switcher -->
+          <div class="bg-slate-200/80 p-1 rounded-2xl grid grid-cols-2 gap-1 text-[11px] font-bold">
+            <button onclick="setGuardianSubView('monitoring')" class="py-2 px-2 rounded-xl transition truncate ${guardianSubView === 'monitoring' ? 'bg-white text-slate-900 shadow-xs' : 'text-slate-600'}">
+              Family (${monitoredPatients.length})
+            </button>
+            <button onclick="setGuardianSubView('mycode')" class="py-2 px-2 rounded-xl transition truncate ${guardianSubView === 'mycode' ? 'bg-white text-brand-700 shadow-xs' : 'text-slate-600'}">
+              My Patient Code
+            </button>
+          </div>
+
+          ${guardianSubView === 'mycode' ? `
+            <div class="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm space-y-4">
+              <div class="text-center space-y-1.5">
+                <span class="inline-block text-[10px] font-bold uppercase tracking-wider bg-brand-50 text-brand-700 px-2.5 py-1 rounded-full">Patient Sharing Mode</span>
+                <h3 class="text-base font-extrabold text-slate-900">Your Pairing Invite Code</h3>
+                <p class="text-xs text-slate-500 leading-relaxed">Share this code with a family member so they receive discreet alerts if any of your scheduled meds go unlogged 1 hour past window.</p>
+              </div>
+
+              <div class="bg-slate-900 text-white rounded-2xl p-4 text-center">
+                <p class="text-[10px] uppercase tracking-widest text-slate-400 font-semibold">Unique Device Sync Code</p>
+                <p class="text-2xl font-mono font-extrabold tracking-widest text-brand-400 mt-1">${myPatientCode}</p>
+                <button onclick="copyPatientCode()" class="mt-3 bg-white/10 hover:bg-white/20 text-white text-xs font-bold px-4 py-2 rounded-xl transition active:scale-95">
+                  📋 Copy Invite Code
+                </button>
+              </div>
+
+              <div class="flex items-center justify-between gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-200">
+                <div class="min-w-0">
+                  <p class="text-xs font-bold text-slate-800">Escalate All Missed Meds</p>
+                  <p class="text-[11px] text-slate-500">Notify Guardians 1h after any unlogged dose</p>
+                </div>
+                <button type="button" onclick="toggleGuardianSync()" class="relative inline-flex h-6 w-11 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out ${guardianSyncEnabled ? 'bg-brand-600' : 'bg-slate-300'}">
+                  <span class="pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow-xs transition duration-200 ease-in-out ${guardianSyncEnabled ? 'translate-x-5' : 'translate-x-0'}"></span>
+                </button>
+              </div>
+            </div>
+          ` : `
+            <!-- Active 1-Hour Missed Medication Escalations -->
+            ${activeAlerts.length > 0 ? `
+              <div class="space-y-2">
+                <h3 class="text-[11px] font-bold uppercase tracking-wider text-rose-600 px-1">🚨 Missed Med Escalations (1h+ Overdue)</h3>
+                ${activeAlerts.map(a => `
+                  <div class="bg-rose-50 border border-rose-200 rounded-3xl p-3.5 space-y-2.5">
+                    <div>
+                      <p class="text-xs font-extrabold text-rose-900">${a.patientName} • Unlogged Dose</p>
+                      <p class="text-xs font-semibold text-rose-800 mt-0.5">${a.medName}</p>
+                      <p class="text-[11px] text-rose-600 mt-0.5">Scheduled ${a.scheduledTime} (${a.overdueBy})</p>
+                    </div>
+                    <button onclick="acknowledgeGuardianAlert('${a.id}')" class="w-full bg-rose-600 hover:bg-rose-700 text-white text-xs font-bold py-2 rounded-xl transition active:scale-95">
+                      ✓ Acknowledge Alert
+                    </button>
+                  </div>
+                `).join('')}
+              </div>
+            ` : ''}
+
+            <!-- Connect New Patient via Code -->
+            <form onsubmit="linkNewPatientByCode(event)" class="bg-white rounded-3xl p-3.5 border border-slate-200/80 shadow-sm space-y-2.5">
+              <div class="flex items-center justify-between gap-2">
+                <label class="text-xs font-bold text-slate-800">+ Link Patient via Code</label>
+                <button type="button" onclick="simulateGuardianMissedAlert()" class="text-[10px] font-bold text-rose-700 bg-rose-50 hover:bg-rose-100 border border-rose-200 px-2 py-1 rounded-lg transition shrink-0">
+                  Test Missed Alert
+                </button>
+              </div>
+              <div class="flex items-center gap-2">
+                <input id="guardian-code-input" type="text" placeholder="e.g. MED-5518" class="min-w-0 flex-1 bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-mono font-bold uppercase focus:outline-none focus:border-brand-500" />
+                <button type="submit" class="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-3.5 py-2 rounded-xl transition active:scale-95 shrink-0">
+                  Link
+                </button>
+              </div>
+            </form>
+
+            <!-- Monitored Patients List -->
+            <div class="space-y-3">
+              ${monitoredPatients.map(pat => `
+                <div class="bg-white rounded-3xl p-3.5 border ${pat.status === 'overdue' ? 'border-rose-300' : 'border-slate-200/80'} shadow-sm space-y-2.5">
+                  <div class="flex items-start justify-between gap-2">
+                    <div class="min-w-0">
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <h4 class="text-sm font-bold text-slate-900">${pat.name}</h4>
+                        <span class="text-[10px] font-mono font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded">${pat.code}</span>
+                      </div>
+                      <p class="text-[11px] text-slate-500 mt-0.5">${pat.relation} • Synced ${pat.lastSync}</p>
+                    </div>
+                    <span class="text-[11px] font-extrabold shrink-0 ${pat.status === 'overdue' ? 'text-rose-700 bg-rose-50' : 'text-emerald-700 bg-emerald-50'} px-2.5 py-1 rounded-xl">
+                      ${pat.adherence}% Adh.
+                    </span>
+                  </div>
+
+                  <div class="divide-y divide-slate-100 border-t border-slate-100 pt-1">
+                    ${pat.meds.map(m => `
+                      <div class="py-1.5 flex items-center justify-between gap-2 text-xs">
+                        <div class="min-w-0 truncate">
+                          <span class="font-semibold text-slate-800">${m.name}</span>
+                          <span class="text-slate-400 text-[11px]"> (${m.qty})</span>
+                        </div>
+                        <span class="text-[10px] font-bold px-2 py-0.5 rounded-lg shrink-0 ${
+                          m.status === 'taken'
+                            ? 'bg-emerald-50 text-emerald-700'
+                            : m.status === 'missed_1h'
+                            ? 'bg-rose-100 text-rose-700'
+                            : 'bg-slate-100 text-slate-600'
+                        }">
+                          ${m.status === 'taken' ? `✓ ${m.time}` : m.status === 'missed_1h' ? `⚠️ Missed (${m.time})` : m.time}
+                        </span>
+                      </div>
+                    `).join('')}
+                  </div>
+                </div>
+              `).join('')}
+            </div>
+          `}
+        </div>
+      `;
+    }
+
+    function renderReportTab() {
+      const takenCount = doses.filter(d => d.status === 'taken').length;
+      const adherencePct = doses.length > 0 ? Math.round((takenCount / doses.length) * 100) : 100;
+
+      const bpLogs = vitalLogs.filter(v => v.type === 'bp');
+      const avgSys = bpLogs.length ? Math.round(bpLogs.reduce((acc, v) => acc + v.sys, 0) / bpLogs.length) : 120;
+      const avgDia = bpLogs.length ? Math.round(bpLogs.reduce((acc, v) => acc + v.dia, 0) / bpLogs.length) : 78;
+
+      const sugarLogs = vitalLogs.filter(v => v.type === 'sugar');
+      const avgSugarMg = sugarLogs.length ? Math.round(sugarLogs.reduce((acc, v) => acc + v.valueMgDl, 0) / sugarLogs.length) : 105;
+
+      const pulseLogs = vitalLogs.filter(v => v.type === 'pulse');
+      const avgPulse = pulseLogs.length ? Math.round(pulseLogs.reduce((acc, v) => acc + v.value, 0) / pulseLogs.length) : 74;
+
+      return `
+        <div class="space-y-4">
+          <div class="bg-slate-900 text-white rounded-3xl p-4 space-y-3 shadow-sm">
+            <div class="flex items-start justify-between gap-3">
+              <div>
+                <span class="text-[10px] font-bold uppercase tracking-wider text-brand-400">Clinician Summary</span>
+                <h2 class="text-base font-bold mt-0.5">7-Day Adherence & Vitals</h2>
+                <p class="text-[11px] text-slate-300 mt-0.5">Correlates medication intake with blood pressure & glucose response.</p>
+              </div>
+              <span class="text-2xl shrink-0">📋</span>
+            </div>
+            <button onclick="showToast('📄 Generated MedFlow_Clinician_Report_Nov18.pdf')" class="w-full bg-brand-500 hover:bg-brand-400 text-slate-950 text-xs font-extrabold py-2.5 rounded-xl transition active:scale-95 flex items-center justify-center gap-1.5">
+              <span>📄 Export PDF Report for Doctor</span>
+            </button>
+          </div>
+
+          <div class="grid grid-cols-2 gap-2.5">
+            <div class="bg-white rounded-3xl p-3.5 border border-slate-200/80 shadow-sm">
+              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Today Adherence</p>
+              <p class="text-xl font-extrabold text-brand-600 mt-1">${adherencePct}%</p>
+              <p class="text-[10px] text-slate-500 mt-0.5">${takenCount}/${doses.length} doses taken</p>
+            </div>
+            <div class="bg-white rounded-3xl p-3.5 border border-slate-200/80 shadow-sm">
+              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Avg Blood Pressure</p>
+              <p class="text-xl font-extrabold text-slate-900 mt-1">${avgSys}/${avgDia}</p>
+              <p class="text-[10px] text-slate-500 mt-0.5">${bpLogs.length} readings (mmHg)</p>
+            </div>
+            <div class="bg-white rounded-3xl p-3.5 border border-slate-200/80 shadow-sm">
+              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Avg Blood Sugar</p>
+              <p class="text-xl font-extrabold text-slate-900 mt-1">${formatGlucoseValue(avgSugarMg)} ${glucoseUnit}</p>
+              <p class="text-[10px] text-slate-500 mt-0.5">${sugarLogs.length} glucose logs</p>
+            </div>
+            <div class="bg-white rounded-3xl p-3.5 border border-slate-200/80 shadow-sm">
+              <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">Avg Resting Pulse</p>
+              <p class="text-xl font-extrabold text-slate-900 mt-1">${avgPulse} bpm</p>
+              <p class="text-[10px] text-slate-500 mt-0.5">${pulseLogs.length} pulse logs</p>
+            </div>
+          </div>
+
+          <div class="space-y-2.5">
+            <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 px-1">Recent Intake Activity Log</h3>
+            ${historyLogs.map(item => `
+              <div class="bg-white rounded-2xl p-3.5 border border-slate-200/80 shadow-sm flex items-start gap-3">
+                <div class="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm font-bold shrink-0">✓</div>
+                <div class="flex-1 min-w-0">
+                  <p class="text-xs font-bold text-slate-900">${item.text}</p>
+                  <p class="text-[10px] font-medium text-slate-400 mt-1">${item.date} • ${item.time}</p>
+                </div>
+              </div>
+            `).join('')}
+          </div>
+        </div>
+      `;
+    }
+
+    // ==========================================
+    // 9. MASTER RENDER & INITIALIZATION
+    // ==========================================
+    function renderApp() {
+      const takenCount = doses.filter(d => d.status === 'taken').length;
+      const totalScheduled = doses.length;
+
+      document.getElementById('status-clock').textContent = formatMinutesTo12h(simulatedMinutesNow);
+      document.getElementById('adherence-pill').textContent = `${takenCount} / ${totalScheduled} Taken`;
+
+      const hasLowStock = medications.some(m => m.stockRemaining <= m.lowStockThreshold);
+      document.getElementById('low-stock-dot').classList.toggle('hidden', !hasLowStock);
+
+      const hasGuardianAlerts = guardianAlerts.some(a => !a.acknowledged);
+      document.getElementById('guardian-alert-dot').classList.toggle('hidden', !hasGuardianAlerts);
+
+      const headerTitle = document.getElementById('header-title');
+      const headerSubtitle = document.getElementById('header-subtitle');
+      const headerBadge = document.getElementById('header-badge');
+      const addFab = document.getElementById('add-med-fab');
+      const mainContent = document.getElementById('main-content');
+
+      // Show adherence badge and '+' Add Med FAB only on Today & Cabinet tabs
+      const showMedControls = currentTab === 'today' || currentTab === 'cabinet';
+      headerBadge.classList.toggle('hidden', currentTab !== 'today');
+      if (addFab) addFab.classList.toggle('hidden', !showMedControls);
+
+      if (currentTab === 'today') {
+        headerSubtitle.textContent = 'Wednesday, Nov 18';
+        headerTitle.textContent = "Today's Regimen";
+        mainContent.innerHTML = renderTodayTab();
+      } else if (currentTab === 'vitals') {
+        headerSubtitle.textContent = 'Biometrics & Symptom Tracker';
+        headerTitle.textContent = 'Vital Signs';
+        mainContent.innerHTML = renderVitalsTab();
+      } else if (currentTab === 'cabinet') {
+        headerSubtitle.textContent = 'Smart Piece Counter';
+        headerTitle.textContent = 'Medicine Cabinet';
+        mainContent.innerHTML = renderCabinetTab();
+      } else if (currentTab === 'guardian') {
+        headerSubtitle.textContent = 'Family & Caregiver Sync';
+        headerTitle.textContent = 'Guardian Mode';
+        mainContent.innerHTML = renderGuardianTab();
+      } else if (currentTab === 'report') {
+        headerSubtitle.textContent = 'Doctor Visit Summary';
+        headerTitle.textContent = 'Health Report';
+        mainContent.innerHTML = renderReportTab();
+      }
+    }
+
+    function resetDemoData() {
+      if (prnTimerInterval) clearInterval(prnTimerInterval);
+      getInitialState();
+      dismissPushBanner();
+      closeModal();
+      renderApp();
+      showToast('🔄 Demo data reset to initial sample regimen!');
+    }
+
+    window.onload = function () {
+      getInitialState();
+      renderApp();
+    };
+  </script>
+</body>
+</html>
