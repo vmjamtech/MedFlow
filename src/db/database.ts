@@ -4,23 +4,36 @@
  */
 
 import { CapacitorSQLite, SQLiteDBConnection, SQLiteConnection } from '@capacitor-community/sqlite';
+import { Capacitor } from '@capacitor/core';
 import type { Medication, Dose, VitalLog, IntakeHistory } from './schema';
 
 export class MedFlowDatabase {
   private db: SQLiteDBConnection | null = null;
   private dbName = 'medflow.db';
-  private sqlite = new SQLiteConnection(CapacitorSQLite);
+  private sqlite: SQLiteConnection | null = null;
+  private isNativePlatform = false;
 
   async init(): Promise<void> {
+    // Detect if running on native platform (Android/iOS)
+    this.isNativePlatform = !Capacitor.isNativePlatform || Capacitor.getPlatform() !== 'web';
+
     try {
-      // Try to open SQLite (Android/native only)
-      const db = await this.sqlite.createConnection(this.dbName, false, 'no-encryption', 1, false);
-      await db.open();
-      this.db = db;
-      await this.createTables();
+      if (this.isNativePlatform) {
+        // Try to open SQLite on Android/iOS
+        this.sqlite = new SQLiteConnection(CapacitorSQLite);
+        const db = await this.sqlite.createConnection(this.dbName, false, 'no-encryption', 1, false);
+        await db.open();
+        this.db = db;
+        await this.createTables();
+        console.log('✓ SQLite database initialized (native platform)');
+      } else {
+        // Browser mode: use localStorage fallback
+        this.initializeLocalStorage();
+        console.log('✓ localStorage fallback initialized (browser mode)');
+      }
     } catch (err) {
-      // Fallback to localStorage for browser dev mode
-      console.warn('SQLite unavailable, using localStorage fallback', err);
+      // Fallback to localStorage if SQLite fails
+      console.warn('SQLite initialization failed, using localStorage fallback', err);
       this.initializeLocalStorage();
     }
   }
@@ -85,9 +98,16 @@ export class MedFlowDatabase {
 
       CREATE TABLE IF NOT EXISTS intake_history (
         id TEXT PRIMARY KEY,
-        time TEXT NOT NULL,
+        medId TEXT NOT NULL,
+        medName TEXT NOT NULL,
+        strength TEXT NOT NULL,
+        doseQty REAL NOT NULL,
+        unit TEXT NOT NULL,
+        takenAt TEXT NOT NULL,
         date TEXT NOT NULL,
-        text TEXT NOT NULL
+        timingStatus TEXT NOT NULL,
+        scheduleType TEXT NOT NULL,
+        createdAt TEXT
       );
 
       CREATE INDEX IF NOT EXISTS idx_doses_scheduled ON doses(scheduledMinutes);
@@ -248,15 +268,28 @@ export class MedFlowDatabase {
   }
 
   // ======================= INTAKE HISTORY =======================
-  async addIntakeHistory(entry: IntakeHistory): Promise<void> {
+  async saveIntakeHistory(entry: IntakeHistory): Promise<void> {
     if (this.db) {
-      const sql = `INSERT INTO intake_history (id, time, date, text) VALUES (?, ?, ?, ?)`;
-      await this.db.run(sql, [entry.id, entry.time, entry.date, entry.text]);
+      const sql = `
+        INSERT INTO intake_history 
+        (id, medId, medName, strength, doseQty, unit, takenAt, date, timingStatus, scheduleType, createdAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+      `;
+      await this.db.run(sql, [
+        entry.id, entry.medId, entry.medName, entry.strength, entry.doseQty, 
+        entry.unit, entry.takenAt, entry.date, entry.timingStatus, 
+        entry.scheduleType, new Date().toISOString()
+      ]);
     } else {
       const history = JSON.parse(localStorage.getItem('medflow_intakeHistory') || '[]');
       history.unshift(entry);
       localStorage.setItem('medflow_intakeHistory', JSON.stringify(history.slice(0, 500)));
     }
+  }
+
+  async addIntakeHistory(entry: IntakeHistory): Promise<void> {
+    // Alias for backward compatibility
+    await this.saveIntakeHistory(entry);
   }
 
   async getIntakeHistory(limit = 100): Promise<IntakeHistory[]> {

@@ -81,9 +81,16 @@ export interface VitalLog {
 
 export interface IntakeHistory {
   id: string;
-  time: string; // "02:15 PM"
-  date: string; // "Nov 18"
-  text: string; // "Took Amoxicillin 500mg (1 capsule) • On time"
+  medId: string;
+  medName: string;
+  strength: string;
+  doseQty: number;
+  unit: string;
+  takenAt: string; // User-facing: "Nov 18 · 07:30 AM"
+  date: string; // ISO 8601: "2026-11-18"
+  timingStatus: string; // "On time", "PRN", "Late"
+  scheduleType: 'fixed' | 'interval' | 'prn';
+  createdAt?: Date;
 }
 
 /**
