@@ -4,12 +4,21 @@
  */
 
 import { LocalNotifications } from '@capacitor/local-notifications';
+import { Capacitor } from '@capacitor/core';
 
 export class NotificationService {
+  private static isNativePlatform = !Capacitor.isNativePlatform || Capacitor.getPlatform() !== 'web';
+
   /**
    * Request notification permissions (Android 13+)
    */
   static async requestPermissions(): Promise<boolean> {
+    if (!this.isNativePlatform) {
+      // Browser mode: notifications not available
+      console.log('ℹ️ Notifications not available in browser mode');
+      return false;
+    }
+
     try {
       const result = await LocalNotifications.requestPermissions();
       return result.granted;

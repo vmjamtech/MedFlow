@@ -235,33 +235,71 @@ export function classifySpO2(percentage: number): VitalStatus {
  * Unified vital status lookup (used in UI for quick classification)
  */
 export function getVitalStatus(
-  type: 'bp' | 'sugar' | 'pulse' | 'temp' | 'spo2' | 'weight',
-  data: { sys?: number; dia?: number; valueMgDl?: number; value?: number; context?: string }
-): VitalStatus {
-  if (type === 'bp' && data.sys !== undefined && data.dia !== undefined) {
-    return classifyBloodPressure(data.sys, data.dia);
+  vitalOrType: any,
+  data?: any
+): { status: string; label: string } {
+  let type: string;
+  let statusObj: VitalStatus;
+
+  // Handle both old and new signatures
+  if (typeof vitalOrType === 'object' && vitalOrType.type) {
+    // New signature: getVitalStatus(vital)
+    type = vitalOrType.type;
+    const vital = vitalOrType;
+
+    if (type === 'bp' && vital.sys !== undefined && vital.dia !== undefined) {
+      statusObj = classifyBloodPressure(vital.sys, vital.dia);
+    } else if (type === 'sugar' && vital.valueMgDl !== undefined) {
+      statusObj = classifyBloodGlucose(vital.valueMgDl, vital.context);
+    } else if (type === 'pulse' && vital.value !== undefined) {
+      statusObj = classifyRestingPulse(vital.value);
+    } else if (type === 'temp' && vital.value !== undefined) {
+      statusObj = classifyTemperature(vital.value);
+    } else if (type === 'spo2' && vital.value !== undefined) {
+      statusObj = classifySpO2(vital.value);
+    } else {
+      statusObj = {
+        label: 'No Data',
+        badge: 'bg-slate-100 text-slate-600',
+        interpretation: 'No vital reading recorded yet',
+      };
+    }
+  } else {
+    // Old signature: getVitalStatus(type, data)
+    type = vitalOrType;
+    if (type === 'bp' && data.sys !== undefined && data.dia !== undefined) {
+      statusObj = classifyBloodPressure(data.sys, data.dia);
+    } else if (type === 'sugar' && data.valueMgDl !== undefined) {
+      statusObj = classifyBloodGlucose(data.valueMgDl, data.context);
+    } else if (type === 'pulse' && data.value !== undefined) {
+      statusObj = classifyRestingPulse(data.value);
+    } else if (type === 'temp' && data.value !== undefined) {
+      statusObj = classifyTemperature(data.value);
+    } else if (type === 'spo2' && data.value !== undefined) {
+      statusObj = classifySpO2(data.value);
+    } else {
+      statusObj = {
+        label: 'No Data',
+        badge: 'bg-slate-100 text-slate-600',
+        interpretation: 'No vital reading recorded yet',
+      };
+    }
   }
 
-  if (type === 'sugar' && data.valueMgDl !== undefined) {
-    return classifyBloodGlucose(data.valueMgDl, data.context);
-  }
-
-  if (type === 'pulse' && data.value !== undefined) {
-    return classifyRestingPulse(data.value);
-  }
-
-  if (type === 'temp' && data.value !== undefined) {
-    return classifyTemperature(data.value);
-  }
-
-  if (type === 'spo2' && data.value !== undefined) {
-    return classifySpO2(data.value);
+  // Map status label to status name for color mapping
+  let status = 'normal';
+  if (statusObj.label.includes('Elevated') || statusObj.label.includes('HTN')) {
+    status = 'elevated';
+  } else if (statusObj.label.includes('Low') || statusObj.label.includes('High') || 
+             statusObj.label.includes('Abnormal') || statusObj.label.includes('Impaired') ||
+             statusObj.label.includes('Diabetic') || statusObj.label.includes('Critical') ||
+             statusObj.label.includes('Hypotension') || statusObj.label.includes('Hypoglycemia')) {
+    status = 'abnormal';
   }
 
   return {
-    label: 'No Data',
-    badge: 'bg-slate-100 text-slate-600',
-    interpretation: 'No vital reading recorded yet',
+    status,
+    label: statusObj.label,
   };
 }
 

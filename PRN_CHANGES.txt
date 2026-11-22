@@ -1,0 +1,42 @@
+# PRN Update Summary
+
+## Changes Made to `src/main.ts` (Lines 1105-1170)
+
+### ✅ Added Counter Badge
+```javascript
+<span class="text-xs font-bold text-slate-600 bg-slate-100 px-2 py-1 rounded-full">
+  ${takenCount} / ${maxDaily} today
+</span>
+```
+
+### ✅ Added Prominent Cooldown Box
+```javascript
+${cooldownActive ? `
+  <div class="bg-slate-800 text-white rounded-xl p-3 mb-3 flex items-center justify-between">
+    <div>
+      <p class="text-[11px] font-bold uppercase tracking-wide mb-1">Safety Cooldown Active</p>
+      <p class="text-sm font-mono font-bold">${formatSeconds(med.cooldownRemainingSeconds || 0)}</p>
+    </div>
+    <button onclick="skipPrnCooldown('${med.id}')" class="bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold px-3 py-2 rounded-lg">
+      Skip Timer
+    </button>
+  </div>
+` : ''}
+```
+
+### ✅ Updated Button Labels
+- "Skip" → "Skip Timer" (complete label)
+- "Take Now" stays (already correct)
+- Added status messages when disabled:
+  - "Daily limit reached"
+  - "Out of stock"
+
+### ✅ Improved Text
+- Changed "Max ${med.maxPerDay}/day • ${med.cooldownHours}h cooldown"
+- To: "Max ${maxDaily} tablet${maxDaily !== 1 ? 's' : ''}/day • ${med.cooldownHours}h safety cooldown"
+- Grammar: pluralize "tablet/tablets" correctly
+
+## Next Steps
+1. Test at http://localhost:5173
+2. Check PRN section matches prototype
+3. Move to next tab (Vitals, Cabinet, Guardian, or Report)
