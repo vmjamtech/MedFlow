@@ -14,6 +14,90 @@
 			"command": "npm run dev",
 			"isBackground": true,
 			"problemMatcher": []
+		},
+		{
+			"label": "Type-check medication fixes",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build medication fixes",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Diagnose Vite 500",
+			"type": "shell",
+			"command": "npx tsc --noEmit; npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify medication fix types",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Verify medication fix build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final medication type check",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Final medication build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check demo controls",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build demo-gated MedFlow",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Inspect production demo gating",
+			"type": "shell",
+			"command": "Select-String -Path dist\\assets\\*.js -Pattern '__MEDFLOW_DEV__|Interactive Demo Controls|Reset Data|Simulate Incoming Request' -AllMatches | Select-Object Path,LineNumber,Line | Format-Table -Wrap",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final demo control type check",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Final demo control build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

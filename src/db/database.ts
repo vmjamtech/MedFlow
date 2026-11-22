@@ -176,8 +176,22 @@ export class MedFlowDatabase {
       await this.db.run('DELETE FROM doses WHERE medId = ?', [medId]);
     } else {
       const meds = JSON.parse(localStorage.getItem('medflow_medications') || '[]');
+      const doses = JSON.parse(localStorage.getItem('medflow_doses') || '[]');
       localStorage.setItem('medflow_medications', JSON.stringify(meds.filter((m: Medication) => m.id !== medId)));
+      localStorage.setItem('medflow_doses', JSON.stringify(doses.filter((dose: Dose) => dose.medId !== medId)));
     }
+  }
+
+  async deleteDosesByMedication(medId: string): Promise<void> {
+    if (this.db) {
+      await this.db.run('DELETE FROM doses WHERE medId = ?', [medId]);
+      return;
+    }
+    const doses = JSON.parse(localStorage.getItem('medflow_doses') || '[]');
+    localStorage.setItem(
+      'medflow_doses',
+      JSON.stringify(doses.filter((dose: Dose) => dose.medId !== medId))
+    );
   }
 
   // ======================= DOSES =======================

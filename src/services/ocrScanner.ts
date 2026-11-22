@@ -4,9 +4,6 @@
  * Falls back to regex parsing for desktop browser testing
  */
 
-import type { OCR_SAMPLE_BOTTLES } from '../db/schema';
-import { TextRecognition } from '@capacitor-mlkit/text-recognition';
-
 export class OCRScannerService {
   /**
    * Scan pill bottle / Rx label via camera (Android native)
@@ -37,8 +34,12 @@ export class OCRScannerService {
       // const result = await TextRecognition.performTextRecognition(...);
       // return this.parseBottleText(result.text);
 
-      // Browser fallback: return sample data
-      return this.getSampleScan();
+      // Browser fallback: exercise the same regex parser used for native OCR text.
+      const sample = this.getSampleScan();
+      return {
+        rawText: sample.rawText,
+        parsedData: this.parseBottleText(sample.rawText),
+      };
     } catch (err) {
       console.warn('OCR scan failed, using sample', err);
       return this.getSampleScan();
@@ -60,6 +61,8 @@ export class OCRScannerService {
     stock: number;
     mealRequired: string;
     mealTiming: string;
+    fixedTime?: string;
+    intervalHours?: number;
   } {
     const lines = rawText.split('\n').map((l) => l.trim());
     const fullText = lines.join(' ').toUpperCase();
@@ -90,8 +93,7 @@ export class OCRScannerService {
 
     // Determine schedule type (fixed/interval/prn)
     let scheduleType = 'fixed';
-    let fixedTime = '08:00';
-    let intervalHours = 8;
+    let intervalHours: number | undefined;
 
     if (fullText.includes('EVERY') && (fullText.includes('HOUR') || fullText.includes('H'))) {
       scheduleType = 'interval';
@@ -120,6 +122,8 @@ export class OCRScannerService {
       stock,
       mealRequired,
       mealTiming,
+      ...(scheduleType === 'fixed' ? { fixedTime: '08:00' } : {}),
+      ...(scheduleType === 'interval' ? { intervalHours } : {}),
     };
   }
 

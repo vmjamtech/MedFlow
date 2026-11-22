@@ -72,23 +72,3 @@ export function getPillBgClass(colorKey: PillColor): string {
   };
   return bgClasses[colorKey] || 'bg-teal-50';
 }
-
-/**
- * Returns pill color palette for styling
- */
-export function getPillPalette(colorKey: PillColor) {
-  return {
-    teal: { fill: '#0d9488', accent: '#99f6e4', bg: 'bg-teal-50' },
-    amber: { fill: '#d97706', accent: '#fde68a', bg: 'bg-amber-50' },
-    rose: { fill: '#e11d48', accent: '#fecdd3', bg: 'bg-rose-50' },
-    blue: { fill: '#0284c7', accent: '#bae6fd', bg: 'bg-sky-50' },
-    indigo: { fill: '#4f46e5', accent: '#c7d2fe', bg: 'bg-indigo-50' },
-  }[colorKey] || { fill: '#0d9488', accent: '#99f6e4', bg: 'bg-teal-50' };
-}
-
-/**
- * Generate HTML for pill display (used in template rendering)
- */
-export function getPillHTML(shape: PillShape, colorKey: PillColor, size = 34): string {
-  return renderPillSVG(shape, colorKey, size);
-}

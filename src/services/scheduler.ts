@@ -45,12 +45,12 @@ export class SchedulerService {
   private static generateIntervalDoses(med: Medication, dayOffset: number): Dose[] {
     const doses: Dose[] = [];
     const intervalHours = med.intervalHours || 8;
-    const startStr = '08:00'; // Default; can be customized per med
+    const startStr = med.fixedTimes?.[0] || '08:00';
     const [h, m] = startStr.split(':').map(Number);
     let currentMinutes = (h * 60 + m) + dayOffset;
 
     let count = 0;
-    while (currentMinutes < 24 * 60 + dayOffset && count < 6) {
+    while (currentMinutes < 24 * 60 + dayOffset && count < 24) {
       doses.push({
         id: `dose-${med.id}-${count}`,
         medId: med.id,
@@ -72,8 +72,7 @@ export class SchedulerService {
   static async processDoseTaken(
     med: Medication,
     dose: Dose,
-    takenAtMinutes: number,
-    prnCooldownStart = false
+    takenAtMinutes: number
   ): Promise<{ med: Medication; shiftedDoses: Dose[] }> {
     const lateOffsetMinutes = takenAtMinutes - dose.scheduledMinutes;
     const shiftedDoses: Dose[] = [];
@@ -98,13 +97,13 @@ export class SchedulerService {
         (d) => d.medId === med.id && d.status === 'pending' && d.scheduledMinutes > dose.scheduledMinutes
       );
 
-      subsequentDoses.forEach((nextDose, idx) => {
+      for (const [idx, nextDose] of subsequentDoses.entries()) {
         const newScheduledMinutes = takenAtMinutes + (med.intervalHours || 8) * 60 * (idx + 1);
         nextDose.scheduledMinutes = newScheduledMinutes;
         nextDose.shiftNote = `Auto-shifted +${lateOffsetMinutes}m to maintain ${med.intervalHours}h spacing`;
         shiftedDoses.push(nextDose);
         await db.saveDose(nextDose);
-      });
+      }
     }
 
     await db.saveMedication(med);

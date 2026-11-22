@@ -5,8 +5,6 @@
 
 import { db } from '../db/database';
 import { getVitalStatus, convertGlucose } from '../utils/clinical';
-import type { VitalLog } from '../db/schema';
-
 export async function renderVitalsTab(): Promise<HTMLElement> {
   const container = document.createElement('div');
   container.className = 'space-y-4';
@@ -44,7 +42,7 @@ export async function renderVitalsTab(): Promise<HTMLElement> {
     <div class="flex items-center justify-between">
       <div>
         <p class="text-xs font-bold text-slate-400 uppercase">Blood Sugar</p>
-        <p class="text-lg font-extrabold text-slate-900 mt-1">${latestSugar ? `${convertGlucose(latestSugar.valueMgDl, 'mg/dL')} mg/dL` : '--'}</p>
+        <p class="text-lg font-extrabold text-slate-900 mt-1">${latestSugar?.valueMgDl !== undefined ? `${convertGlucose(latestSugar.valueMgDl, 'mg/dL')} mg/dL` : '--'}</p>
       </div>
       <span class="${sugarStatus.badge} text-[10px] font-bold px-2 py-1 rounded-full">${sugarStatus.label}</span>
     </div>

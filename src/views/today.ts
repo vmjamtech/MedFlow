@@ -5,7 +5,7 @@
 
 import { db } from '../db/database';
 import { SchedulerService } from '../services/scheduler';
-import type { Medication, Dose } from '../db/schema';
+import type { Dose } from '../db/schema';
 
 export async function renderTodayTab(): Promise<HTMLElement> {
   const container = document.createElement('div');

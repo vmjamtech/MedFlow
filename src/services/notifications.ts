@@ -21,7 +21,7 @@ export class NotificationService {
 
     try {
       const result = await LocalNotifications.requestPermissions();
-      return result.granted;
+      return result.display === 'granted';
     } catch (err) {
       console.warn('Notification permission request failed', err);
       return false;

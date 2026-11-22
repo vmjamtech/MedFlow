@@ -137,32 +137,6 @@ export interface GuardianLink {
   timestamp: string;
 }
 
-export interface AppState {
-  currentTab: 'today' | 'vitals' | 'cabinet' | 'guardian' | 'report';
-  medications: Medication[];
-  doses: Dose[];
-  vitalLogs: VitalLog[];
-  intakeHistory: IntakeHistory[];
-  
-  // Guardian mode
-  myPatientCode: string; // "MED-7429"
-  guardianSyncEnabled: boolean;
-  monitoredPatients: MonitoredPatient[];
-  guardianAlerts: GuardianAlert[];
-  incomingRequests: GuardianLink[];
-  approvedGuardians: GuardianLink[];
-  pendingLinkRequests: GuardianLink[];
-  incomingRequestsOpen: boolean;
-  
-  // Vitals UI filters
-  glucoseUnit: 'mg/dL' | 'mmol/L';
-  selectedTrendVital: 'bp' | 'sugar' | 'pulse' | 'temp' | 'spo2' | 'weight';
-  vitalsHistoryFilter: 'all' | 'bp' | 'sugar' | 'pulse' | 'other';
-  vitalsViewMode: 'cards' | 'printable';
-  vitalsDateFrom: string; // "2026-11-12"
-  vitalsDateTo: string; // "2026-11-18"
-}
-
 export const PILL_COLORS = {
   teal: { fill: '#0d9488', accent: '#99f6e4', bg: 'bg-teal-50' },
   amber: { fill: '#d97706', accent: '#fde68a', bg: 'bg-amber-50' },

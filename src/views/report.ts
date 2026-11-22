@@ -11,7 +11,6 @@ export async function renderReportTab(): Promise<HTMLElement> {
   container.className = 'space-y-4';
 
   // Load data for summary
-  const medications = await db.getMedications();
   const doses = await db.getDoses();
   const vitals = await db.getVitalLogs();
   const history = await db.getIntakeHistory(10);
@@ -87,8 +86,8 @@ export async function renderReportTab(): Promise<HTMLElement> {
     logItem.innerHTML = `
       <div class="w-8 h-8 rounded-xl bg-emerald-100 text-emerald-700 flex items-center justify-center text-sm font-bold shrink-0">✓</div>
       <div class="flex-1 min-w-0">
-        <p class="text-xs font-bold text-slate-900">${item.text}</p>
-        <p class="text-[10px] font-medium text-slate-400 mt-1">${item.date} • ${item.time}</p>
+        <p class="text-xs font-bold text-slate-900">${item.medName} ${item.strength} • ${item.timingStatus}</p>
+        <p class="text-[10px] font-medium text-slate-400 mt-1">${item.date} • ${item.takenAt}</p>
       </div>
     `;
     activitySection.appendChild(logItem);

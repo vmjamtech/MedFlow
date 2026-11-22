@@ -237,7 +237,7 @@ export function classifySpO2(percentage: number): VitalStatus {
 export function getVitalStatus(
   vitalOrType: any,
   data?: any
-): { status: string; label: string } {
+): VitalStatus & { status: string } {
   let type: string;
   let statusObj: VitalStatus;
 
@@ -300,6 +300,8 @@ export function getVitalStatus(
   return {
     status,
     label: statusObj.label,
+    badge: statusObj.badge,
+    interpretation: statusObj.interpretation,
   };
 }
 

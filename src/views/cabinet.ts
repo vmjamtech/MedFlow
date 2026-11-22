@@ -5,8 +5,6 @@
 
 import { db } from '../db/database';
 import { getPillBgClass } from '../utils/pillSvg';
-import type { Medication } from '../db/schema';
-
 export async function renderCabinetTab(): Promise<HTMLElement> {
   const container = document.createElement('div');
   container.className = 'space-y-3.5';

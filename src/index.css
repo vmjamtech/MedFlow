@@ -62,11 +62,6 @@ body {
   min-height: 100dvh;
 }
 
-/* Smooth transitions */
-.transition-smooth {
-  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
-}
-
 /* Animations */
 @keyframes slideUp {
   from {
@@ -126,53 +121,6 @@ body {
   animation: scaleIn 0.2s ease-out;
 }
 
-/* Button states */
-.btn {
-  @apply inline-flex items-center justify-center px-4 py-2 rounded-xl font-semibold text-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed;
-}
-
-.btn-primary {
-  @apply btn bg-teal-600 hover:bg-teal-700 text-white shadow-sm shadow-teal-600/20;
-}
-
-.btn-secondary {
-  @apply btn bg-slate-100 hover:bg-slate-200 text-slate-700;
-}
-
-.btn-ghost {
-  @apply btn bg-transparent hover:bg-slate-100 text-slate-700;
-}
-
-/* Badge utilities */
-.badge {
-  @apply inline-flex items-center px-2.5 py-1 rounded-full text-xs font-bold;
-}
-
-.badge-success {
-  @apply badge bg-emerald-100 text-emerald-700;
-}
-
-.badge-warning {
-  @apply badge bg-amber-100 text-amber-700;
-}
-
-.badge-danger {
-  @apply badge bg-rose-100 text-rose-700;
-}
-
-.badge-info {
-  @apply badge bg-sky-100 text-sky-700;
-}
-
-/* Card styling */
-.card {
-  @apply bg-white rounded-2xl border border-slate-200/80 shadow-sm p-4 transition-all;
-}
-
-.card:hover {
-  @apply shadow-md border-slate-200;
-}
-
 /* Form elements */
 input,
 select,
@@ -183,27 +131,6 @@ textarea {
 input:disabled,
 select:disabled {
   @apply bg-slate-100 text-slate-500 cursor-not-allowed;
-}
-
-/* Modal overlay */
-.modal-backdrop {
-  @apply fixed inset-0 z-40 bg-slate-900/60 backdrop-blur-sm;
-}
-
-.modal-content {
-  @apply bg-white rounded-t-3xl shadow-2xl border-t border-slate-200;
-}
-
-/* Loading spinner */
-@keyframes spin {
-  to {
-    transform: rotate(360deg);
-  }
-}
-
-.spinner {
-  @apply inline-block animate-spin;
-  animation: spin 1s linear infinite;
 }
 
 /* Print styles (@media print for PDF export) */
@@ -218,12 +145,6 @@ select:disabled {
 
   .print-only {
     @apply block !important;
-  }
-
-  .btn,
-  .modal-backdrop,
-  .modal-content {
-    @apply hidden !important;
   }
 
   table {
@@ -256,9 +177,6 @@ select:disabled {
     @apply bg-slate-900 border-slate-700 text-slate-50 placeholder:text-slate-500;
   }
 
-  .card {
-    @apply bg-slate-900 border-slate-700;
-  }
 }
 
 /* Accessibility */

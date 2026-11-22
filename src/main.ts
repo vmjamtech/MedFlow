@@ -5,12 +5,11 @@
  */
 
 import './index.css';
+import { Capacitor } from '@capacitor/core';
 import { db } from './db/database';
 import type { Medication, Dose, VitalLog, IntakeHistory } from './db/schema';
-import { 
-  classifyBloodPressure, classifyBloodGlucose, classifyRestingPulse, 
-  classifyTemperature, classifySpO2, getVitalStatus, convertGlucose
-} from './utils/clinical';
+import { SchedulerService } from './services/scheduler';
+import { getVitalStatus } from './utils/clinical';
 import { renderPillSVG, getPillBgClass } from './utils/pillSvg';
 
 // Auto-init when DOM is ready
@@ -88,10 +87,21 @@ function createShell() {
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
   const dayStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
+  const demoControls = import.meta.env.DEV ? `
+    <div class="w-full max-w-md mb-2 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm">
+      <div class="min-w-0">
+        <p class="text-[10px] font-black uppercase tracking-wider text-teal-700">Interactive Demo Controls</p>
+        <p class="text-[9px] text-slate-500">Development only</p>
+      </div>
+      <button onclick="triggerLockScreenNotification('MedFlow test reminder', 'Time to take your medication!')" class="shrink-0 rounded-xl bg-teal-600 px-3 py-2 text-[10px] font-bold text-white shadow-sm">🔔 Test Alert</button>
+      <button onclick="resetDemoData()" class="shrink-0 rounded-xl bg-slate-100 px-3 py-2 text-[10px] font-bold text-slate-700">Reset Data</button>
+    </div>
+  ` : '';
 
   app.innerHTML = `
-    <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex items-start justify-center p-2">
-    <div class="h-[100dvh] w-full max-w-md mx-auto flex flex-col overflow-hidden bg-slate-50 relative shadow-xl rounded-none md:rounded-3xl">
+    <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col items-center justify-start p-2">
+    ${demoControls}
+    <div class="${import.meta.env.DEV ? 'h-[calc(100dvh-4.25rem)]' : 'h-[100dvh]'} w-full max-w-md mx-auto flex flex-col overflow-hidden bg-slate-50 relative shadow-xl rounded-none md:rounded-3xl">
         
         <!-- Header with Time & Date (Pinned Top, Safe-Area Aware) -->
         <header class="shrink-0 bg-white border-b border-slate-200/60 shadow-sm" style="padding-top: max(0.75rem, env(safe-area-inset-top));">
@@ -172,7 +182,8 @@ async function initializeApp() {
   try {
     // Ensure DOM is ready before creating shell
     if (!document.getElementById('app')) {
-      return setTimeout(() => initializeApp(), 100);
+      setTimeout(() => initializeApp(), 100);
+      return;
     }
 
     createShell();
@@ -190,6 +201,7 @@ async function initializeApp() {
     state.doses = await db.getDoses();
     state.vitalLogs = await db.getVitalLogs();
     state.intakeHistory = await db.getIntakeHistory(100);
+    await reconcileMissingMedicationSchedules();
 
     monitoredPatients = [
       {
@@ -283,7 +295,7 @@ async function seedSampleData() {
       scheduleType: 'fixed',
       fixedTimes: ['08:00', '20:00'],
       mealRequired: 'with_meal',
-      mealTiming: 'With Meal',
+      mealTiming: 'After Meal',
       mealTag: 'With Meal',
       instruction: '0.5 tablet with breakfast & dinner',
       stockRemaining: 4,
@@ -316,9 +328,9 @@ async function seedSampleData() {
   ];
 
   const doses: Dose[] = [
-    { id: 'dose-1', medId: 'med-amox', scheduledMinutes: 8*60, originalMinutes: 8*60, status: 'taken', takenAtStr: '08:30 AM' },
-    { id: 'dose-2', medId: 'med-met', scheduledMinutes: 8*60+30, originalMinutes: 8*60+30, status: 'taken', takenAtStr: '08:45 AM' },
-    { id: 'dose-3', medId: 'med-amox', scheduledMinutes: 16*60, originalMinutes: 16*60, status: 'taken', takenAtStr: '04:30 PM' },
+    { id: 'dose-1', medId: 'med-amox', scheduledMinutes: 8*60, originalMinutes: 8*60, status: 'pending' },
+    { id: 'dose-2', medId: 'med-met', scheduledMinutes: 8*60+30, originalMinutes: 8*60+30, status: 'pending' },
+    { id: 'dose-3', medId: 'med-amox', scheduledMinutes: 16*60, originalMinutes: 16*60, status: 'pending' },
     { id: 'dose-4', medId: 'med-met', scheduledMinutes: 20*60, originalMinutes: 20*60, status: 'pending' },
   ];
 
@@ -347,6 +359,25 @@ async function seedSampleData() {
   for (const dose of doses) await db.saveDose(dose);
   for (const vital of vitalLogs) await db.saveVitalLog(vital);
   for (const history of intakeHistory) await db.saveIntakeHistory(history);
+}
+
+async function reconcileMissingMedicationSchedules() {
+  const scheduledMedicationIds = new Set(state.doses.map((dose) => dose.medId));
+  const recoveredDoses: Dose[] = [];
+
+  for (const med of state.medications) {
+    if (med.scheduleType === 'prn' || scheduledMedicationIds.has(med.id)) continue;
+    const doses = await SchedulerService.calculateDayDoses(med);
+    for (const dose of doses) {
+      await db.saveDose(dose);
+      recoveredDoses.push(dose);
+    }
+  }
+
+  if (recoveredDoses.length > 0) {
+    state.doses.push(...recoveredDoses);
+    state.doses.sort((a, b) => a.scheduledMinutes - b.scheduledMinutes);
+  }
 }
 
 // ==========================================
@@ -597,20 +628,20 @@ async function refillMedication(medId: string) {
 async function editMedication(medId: string) {
   const med = state.medications.find(m => m.id === medId);
   if (!med) return;
-  
-  // Open add medication modal but prefilled with current med data
-  const backdrop = document.getElementById('modal-backdrop');
-  if (!backdrop) return;
-  
-  // Set form fields with existing medication data
+
+  openAddMedModal();
+
   const nameInput = document.getElementById('add-med-name') as HTMLInputElement;
   const strengthInput = document.getElementById('add-med-strength') as HTMLInputElement;
-  const qtyInput = document.getElementById('add-dose-qty') as HTMLInputElement;
-  const unitSelect = document.getElementById('add-unit') as HTMLSelectElement;
-  const stockInput = document.getElementById('add-stock-pcs') as HTMLInputElement;
-  const shapeSelect = document.getElementById('add-pill-shape') as HTMLSelectElement;
-  const colorSelect = document.getElementById('add-pill-color') as HTMLSelectElement;
-  
+  const qtyInput = document.getElementById('add-med-qty') as HTMLInputElement;
+  const unitSelect = document.getElementById('add-med-unit') as HTMLSelectElement;
+  const stockInput = document.getElementById('add-med-stock') as HTMLInputElement;
+  const shapeSelect = document.getElementById('add-med-shape') as HTMLSelectElement;
+  const colorSelect = document.getElementById('add-med-color') as HTMLSelectElement;
+  const mealRequired = document.getElementById('add-meal-required') as HTMLSelectElement;
+  const mealTiming = document.getElementById('add-meal-timing') as HTMLSelectElement;
+  const scheduleType = document.getElementById('add-schedule-type') as HTMLSelectElement;
+
   if (nameInput) nameInput.value = med.name;
   if (strengthInput) strengthInput.value = med.strength;
   if (qtyInput) qtyInput.value = String(med.doseQty);
@@ -618,17 +649,35 @@ async function editMedication(medId: string) {
   if (stockInput) stockInput.value = String(med.stockRemaining);
   if (shapeSelect) shapeSelect.value = med.shape;
   if (colorSelect) colorSelect.value = med.color;
-  
-  // Store the medId in a data attribute so we can update instead of create
+  if (mealRequired) mealRequired.value = med.mealRequired;
+  if (mealTiming && med.mealTiming) mealTiming.value = med.mealTiming;
+  if (scheduleType) {
+    scheduleType.value = med.scheduleType;
+    toggleScheduleFields();
+  }
+  toggleMealTimingField();
+
+  if (med.scheduleType === 'fixed') {
+    const fixedTime = document.getElementById('add-fixed-time') as HTMLInputElement;
+    if (fixedTime) fixedTime.value = med.fixedTimes?.[0] || '09:00';
+  } else if (med.scheduleType === 'interval') {
+    const intervalStart = document.getElementById('add-interval-start') as HTMLInputElement;
+    const intervalHours = document.getElementById('add-interval-hours') as HTMLSelectElement;
+    if (intervalStart) intervalStart.value = med.fixedTimes?.[0] || '08:00';
+    if (intervalHours) intervalHours.value = String(med.intervalHours || 8);
+  } else {
+    const cooldown = document.getElementById('add-cooldown') as HTMLInputElement;
+    const maxDay = document.getElementById('add-maxday') as HTMLInputElement;
+    if (cooldown) cooldown.value = String(med.cooldownHours || 4);
+    if (maxDay) maxDay.value = String(med.maxPerDay || 4);
+  }
+
   const form = document.getElementById('add-medication-form') as HTMLFormElement;
   if (form) {
     form.setAttribute('data-edit-id', medId);
     const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
     if (submitBtn) submitBtn.textContent = 'Update Medication & Schedule';
   }
-  
-  backdrop.classList.remove('hidden');
-  openAddMedModal();
 }
 
 async function deleteMedication(medId: string) {
@@ -639,7 +688,7 @@ async function deleteMedication(medId: string) {
   if (confirm === med.name) {
     state.medications = state.medications.filter(m => m.id !== medId);
     state.doses = state.doses.filter(d => d.medId !== medId);
-    await db.saveMedication(med); // Will be deleted via app logic
+    await db.deleteMedication(medId);
     showToast(`🗑️ Deleted ${med.name}`);
     renderApp();
   } else if (confirm !== null) {
@@ -654,30 +703,14 @@ function simulateOcrBottleScan() {
   const backdrop = document.getElementById('modal-backdrop');
   if (!backdrop) return;
   
-  // Set form fields with simulated OCR data
-  const nameInput = document.getElementById('add-med-name') as HTMLInputElement;
-  const strengthInput = document.getElementById('add-med-strength') as HTMLInputElement;
-  const qtyInput = document.getElementById('add-med-qty') as HTMLInputElement;
-  const unitSelect = document.getElementById('add-med-unit') as HTMLSelectElement;
-  const stockInput = document.getElementById('add-med-stock') as HTMLInputElement;
   const shapeSelect = document.getElementById('add-pill-shape') as HTMLSelectElement;
   const colorSelect = document.getElementById('add-pill-color') as HTMLSelectElement;
-  
-  if (nameInput) nameInput.value = 'Lisinopril';
-  if (strengthInput) strengthInput.value = '10mg';
-  if (qtyInput) qtyInput.value = '1';
-  if (unitSelect) unitSelect.value = 'tablet';
-  if (stockInput) stockInput.value = '30';
+
+  fillFormWithOcrData(parseOcrText(
+    'LISINOPRIL 10MG\nTAKE 1 TABLET BY MOUTH EVERY MORNING\nQTY: 30 TABLETS'
+  ));
   if (shapeSelect) shapeSelect.value = 'tablet';
   if (colorSelect) colorSelect.value = 'white';
-  
-  // Clear edit mode if set
-  const form = document.getElementById('add-medication-form') as HTMLFormElement;
-  if (form) {
-    form.removeAttribute('data-edit-id');
-    const submitBtn = form.querySelector('button[type="submit"]') as HTMLButtonElement;
-    if (submitBtn) submitBtn.textContent = 'Save & Schedule';
-  }
   
   showToast('📱 OCR scan complete: Lisinopril 10mg detected', 'success');
   backdrop.classList.remove('hidden');
@@ -847,7 +880,7 @@ function openAddMedModal() {
   document.getElementById('modal-title')!.textContent = 'Add Medication';
 
   modalBody.innerHTML = `
-    <form onsubmit="handleAddMedicationSubmit(event)" class="space-y-4">
+    <form id="add-medication-form" onsubmit="handleAddMedicationSubmit(event)" class="space-y-4">
       <div class="grid grid-cols-3 gap-2">
         <div class="col-span-2">
           <label class="block text-xs font-bold text-slate-900 mb-1.5 uppercase tracking-wide">Medicine Name</label>
@@ -995,20 +1028,25 @@ function toggleMealTimingField() {
 
 function handleAddMedicationSubmit(e: Event) {
   e.preventDefault();
+  const form = e.currentTarget as HTMLFormElement;
+  const editingId = form.dataset.editId;
+  const existingMed = editingId
+    ? state.medications.find((medication) => medication.id === editingId)
+    : undefined;
   const name = (document.getElementById('add-med-name') as HTMLInputElement).value.trim();
   const strength = (document.getElementById('add-med-strength') as HTMLInputElement).value.trim();
   const shape = (document.getElementById('add-med-shape') as HTMLSelectElement).value;
   const color = (document.getElementById('add-med-color') as HTMLSelectElement).value;
   const doseQty = parseFloat((document.getElementById('add-med-qty') as HTMLInputElement).value) || 1;
-  const unit = (document.getElementById('add-med-unit') as HTMLSelectElement).value;
+  const unit = (document.getElementById('add-med-unit') as HTMLSelectElement).value as Medication['unit'];
   const stockTotal = parseFloat((document.getElementById('add-med-stock') as HTMLInputElement).value) || 30;
   const mealRequired = (document.getElementById('add-meal-required') as HTMLSelectElement).value;
-  const mealTiming = (document.getElementById('add-meal-timing') as HTMLSelectElement)?.value || 'Before Meal';
+  const mealTiming = ((document.getElementById('add-meal-timing') as HTMLSelectElement)?.value || 'Before Meal') as Medication['mealTiming'];
   const mealTag = mealRequired === 'with_meal' ? mealTiming : 'No Meal Necessary';
   const scheduleType = (document.getElementById('add-schedule-type') as HTMLSelectElement).value;
 
   const med: Medication = {
-    id: 'med-' + Date.now(),
+    id: existingMed?.id || 'med-' + Date.now(),
     name,
     strength,
     shape: shape as any,
@@ -1029,7 +1067,9 @@ function handleAddMedicationSubmit(e: Event) {
     const timeStr = (document.getElementById('add-fixed-time') as HTMLInputElement)?.value || '09:00';
     med.fixedTimes = [timeStr];
   } else if (scheduleType === 'interval') {
+    const startTime = (document.getElementById('add-interval-start') as HTMLInputElement)?.value || '08:00';
     med.intervalHours = parseInt((document.getElementById('add-interval-hours') as HTMLSelectElement)?.value || '8', 10);
+    med.fixedTimes = [startTime];
   } else if (scheduleType === 'prn') {
     med.cooldownHours = parseInt((document.getElementById('add-cooldown') as HTMLInputElement)?.value || '4', 10);
     med.maxPerDay = parseInt((document.getElementById('add-maxday') as HTMLInputElement)?.value || '4', 10);
@@ -1037,7 +1077,7 @@ function handleAddMedicationSubmit(e: Event) {
     med.cooldownRemainingSeconds = 0;
   }
 
-  submitAddMedication(med);
+  void submitAddMedication(med, Boolean(existingMed));
 }
 
 function closeModal() {
@@ -1047,66 +1087,44 @@ function closeModal() {
   }
 }
 
-async function submitLogVital(type: string, data: any) {
-  const vital: VitalLog = {
-    id: 'v-' + Date.now(),
-    type: type as any,
-    date: new Date().toISOString().split('T')[0],
-    dateLabel: new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' }),
-    context: data.context || '',
-    note: data.note || '',
-  };
-
-  if (type === 'bp') {
-    vital.sys = parseInt(data.sys);
-    vital.dia = parseInt(data.dia);
-  } else if (type === 'sugar') {
-    vital.valueMgDl = parseInt(data.value);
-  } else if (type === 'pulse' || type === 'temp' || type === 'spo2' || type === 'weight') {
-    vital.value = parseFloat(data.value);
-  }
-
-  await db.saveVitalLog(vital);
-  state.vitalLogs.unshift(vital);
-  closeModal();
-  showToast('✓ Vital sign logged');
-  renderApp();
-}
-
-async function submitAddMedication(formData: any) {
-  const med: Medication = {
-    id: 'med-' + Date.now(),
-    name: formData.name || 'Untitled',
-    strength: formData.strength || '',
-    shape: formData.shape || 'round',
-    color: formData.color || 'teal',
-    doseQty: parseFloat(formData.qty) || 1,
-    unit: formData.unit || 'tablet',
-    scheduleType: formData.scheduleType || 'fixed',
-    mealRequired: formData.mealRequired || 'no_meal',
-    mealTiming: formData.mealTiming,
-    mealTag: formData.mealTiming,
-    instruction: formData.instruction || '',
-    stockRemaining: parseFloat(formData.stock) || 10,
-    stockTotal: parseFloat(formData.stock) || 10,
-    lowStockThreshold: 5,
-  };
-
-  if (med.scheduleType === 'fixed') {
-    med.fixedTimes = formData.fixedTimes || ['08:00', '20:00'];
-  } else if (med.scheduleType === 'interval') {
-    med.intervalHours = parseInt(formData.intervalHours) || 8;
-  } else if (med.scheduleType === 'prn') {
-    med.cooldownHours = parseInt(formData.cooldownHours) || 4;
-    med.maxPerDay = parseInt(formData.maxPerDay) || 3;
-    med.takenTodayCount = 0;
-    med.cooldownRemainingSeconds = 0;
+async function submitAddMedication(med: Medication, isEdit: boolean) {
+  const existingDoses = state.doses.filter((dose) => dose.medId === med.id);
+  const generatedDoses = await SchedulerService.calculateDayDoses(med);
+  const matchedDoseIds = new Set<string>();
+  const scheduledDoses = generatedDoses.map((generated) => {
+    const existing = existingDoses.find(
+      (dose) =>
+        !matchedDoseIds.has(dose.id) &&
+        dose.originalMinutes === generated.originalMinutes
+    );
+    if (!existing) return generated;
+    matchedDoseIds.add(existing.id);
+    return { ...generated, status: existing.status, takenAtStr: existing.takenAtStr, shiftNote: existing.shiftNote };
+  });
+  for (const existing of existingDoses) {
+    if (existing.status === 'taken' && !matchedDoseIds.has(existing.id)) {
+      scheduledDoses.push(existing);
+    }
   }
 
   await db.saveMedication(med);
-  state.medications.push(med);
+  await db.deleteDosesByMedication(med.id);
+  for (const dose of scheduledDoses) await db.saveDose(dose);
+
+  if (isEdit) {
+    state.medications = state.medications.map((medication) =>
+      medication.id === med.id ? med : medication
+    );
+  } else {
+    state.medications.push(med);
+  }
+  state.doses = state.doses
+    .filter((dose) => dose.medId !== med.id)
+    .concat(scheduledDoses)
+    .sort((a, b) => a.scheduledMinutes - b.scheduledMinutes);
+
   closeModal();
-  showToast(`✓ Added ${med.name}`);
+  showToast(`✓ ${isEdit ? 'Updated' : 'Added'} ${med.name}`);
   renderApp();
 }
 
@@ -1328,7 +1346,7 @@ function updateGuardianAlertDot() {
 // ==========================================
 
 function renderTodayTab(): string {
-  const fixedDoses = state.doses.filter(d => !d.skippedNote);
+  const fixedDoses = state.doses.filter(d => d.status !== 'skipped');
   const grouped = groupDosesByTimeOfDay(fixedDoses);
   const prnMeds = state.medications.filter(m => m.scheduleType === 'prn');
 
@@ -1559,11 +1577,6 @@ function renderVitalsTab(): string {
   // Blood Pressure Summary Card (Large, Prominent)
   if (latestBP) {
     const bpStatus = getVitalStatus(latestBP);
-    const bpStatusColors: Record<string, string> = {
-      normal: 'text-emerald-600',
-      elevated: 'text-amber-600',
-      abnormal: 'text-rose-600',
-    };
     html += `
       <div class="bg-white border-2 border-teal-300/60 rounded-2xl p-4 shadow-sm mb-4 relative overflow-hidden">
         <div class="absolute top-0 right-0 w-24 h-24 bg-teal-50/40 rounded-full -mr-12 -mt-12"></div>
@@ -1677,7 +1690,7 @@ function renderVitalsTab(): string {
           <p class="text-[9px] text-slate-500">Last 7</p>
         </div>
         <div class="h-24 flex items-end justify-around gap-1 bg-gradient-to-t from-slate-50 to-transparent p-2 rounded-lg">
-          ${bpLogs.map((bp, i) => {
+          ${bpLogs.map((bp) => {
             const heightSys = ((bp.sys! - minSys) / rangeSys) * 100;
             return `<div class="flex-1 flex flex-col items-center justify-end">
               <div class="w-full bg-gradient-to-t from-rose-400 to-rose-300 rounded-t-sm" style="height: ${heightSys}%; min-height: 2px;" title="${bp.sys}/${bp.dia}"></div>
@@ -2158,7 +2171,7 @@ function renderGuardianTab(): string {
             <!-- Medications List -->
             ${patient.meds && patient.meds.length > 0 ? `
               <div class="space-y-1.5 mb-0">
-                ${patient.meds.map((med: any, idx: number) => {
+                ${patient.meds.map((med: any) => {
                   const isMissed = med.status === 'missed_1h' || med.status === 'missed_2h';
                   const statusColor = isMissed ? 'text-rose-600' : med.status === 'taken' ? 'text-teal-600' : 'text-slate-600';
                   const statusIcon = isMissed ? '⚠️' : med.status === 'taken' ? '✓' : '⏱';
@@ -2204,7 +2217,6 @@ function renderReportTab(): string {
   const adherencePercent = getAdherencePercentage();
   const takenDoses = state.doses.filter(d => d.status === 'taken').length;
   const totalScheduledDoses = state.doses.filter(d => d.status !== 'skipped').length;
-  const pendingDoses = state.doses.filter(d => d.status === 'pending').length;
 
   // Vital Statistics
   const bpLogs = state.vitalLogs.filter(v => v.type === 'bp');
@@ -2467,7 +2479,6 @@ function handleLogVitalFormSubmit(e: Event) {
       type: 'bp',
       sys,
       dia,
-      pulse: isNaN(pulseOpt) ? undefined : pulseOpt,
       date: dateStr,
       dateLabel,
       context,
@@ -2553,7 +2564,7 @@ function renderCalendarModal() {
   document.getElementById('modal-title')!.textContent = 'Select Date';
   document.getElementById('modal-subtitle')!.textContent = '';
 
-  const [year, month, day] = calendarDisplayDate.split('-').map(Number);
+  const [year, month] = calendarDisplayDate.split('-').map(Number);
   const daysInMonth = new Date(year, month, 0).getDate();
   const firstDayOfMonth = new Date(year, month - 1, 1).getDay();
 
@@ -2823,7 +2834,29 @@ function dismissPushBanner() {
 }
 
 async function resetDemoData() {
+  if (!import.meta.env.DEV) return;
+  if (!confirm('Reset all MedFlow browser demo medications, doses, vitals, intake history, and Guardian requests?')) {
+    return;
+  }
+
   try {
+    if (!Capacitor.isNativePlatform()) {
+      [
+        'medflow_medications',
+        'medflow_doses',
+        'medflow_vitalLogs',
+        'medflow_intakeHistory',
+        'medflow_guardian_incoming',
+        'medflow_guardian_approved',
+        'medflow_guardian_pending',
+        'medflow_guardian_monitored',
+        'medflow_myPatientName',
+      ].forEach((key) => localStorage.removeItem(key));
+    } else {
+      showToast('Demo reset is browser-only', 'warning');
+      return;
+    }
+
     state.medications = [];
     state.doses = [];
     state.vitalLogs = [];
@@ -2836,6 +2869,10 @@ async function resetDemoData() {
     state.doses = await db.getDoses();
     state.vitalLogs = await db.getVitalLogs();
     state.intakeHistory = await db.getIntakeHistory(100);
+    (state as any).incomingRequests = [];
+    (state as any).approvedGuardians = [];
+    (state as any).pendingLinkRequests = [];
+    (state as any).incomingRequestsOpen = false;
     
     showToast('✓ Demo data reset');
     renderApp();
@@ -2892,6 +2929,9 @@ async function resetDemoData() {
 (window as any).linkNewPatientByCode = linkNewPatientByCode;
 (window as any).acknowledgeGuardianAlert = acknowledgeGuardianAlert;
 (window as any).showToast = showToast;
+(window as any).__MEDFLOW_DEV__ = import.meta.env.DEV;
+(window as any).state = state;
+(window as any).getVitalStatus = getVitalStatus;
 (window as any).renderApp = renderApp;
 (window as any).renderTodayTab = renderTodayTab;
 (window as any).renderVitalsTab = renderVitalsTab;
