@@ -64,7 +64,6 @@ let state: AppState = {
 };
 
 let prnTimerInterval: NodeJS.Timeout | null = null;
-let simulatedNowMinutes = 8 * 60; // Start at 08:00 AM
 let guardianAlerts: Array<any> = [];
 let monitoredPatients: Array<any> = [];
 let linkingPatientCode: string | null = null;
@@ -393,6 +392,13 @@ function formatMinutesTo12h(minutes: number): string {
   return `${String(h12).padStart(2, '0')}:${String(mins).padStart(2, '0')} ${ampm}`;
 }
 
+function formatLateDuration(minutes: number): string {
+  const capped = Math.max(0, Math.min(minutes, 1439));
+  const hours = Math.floor(capped / 60);
+  const remainder = capped % 60;
+  return `${String(hours).padStart(2, '0')}hr ${String(remainder).padStart(2, '0')}m`;
+}
+
 function getTimeOfDayGroup(minutes: number): string {
   const wrapped = ((minutes % 1440) + 1440) % 1440;
   if (wrapped < 12 * 60) return 'Morning';
@@ -479,7 +485,7 @@ function showToast(message: string, type: 'success' | 'warning' | 'alert' = 'suc
 // EVENT HANDLERS - DOSE MANAGEMENT
 // ==========================================
 
-async function takeScheduledDose(doseId: string, lateOffsetMinutes = 0) {
+async function takeScheduledDose(doseId: string, simulatedLateMinutes?: number) {
   const dose = state.doses.find(d => d.id === doseId);
   if (!dose || dose.status === 'taken') return;
 
@@ -489,25 +495,38 @@ async function takeScheduledDose(doseId: string, lateOffsetMinutes = 0) {
     return;
   }
 
+  const now = new Date();
+  const actualMinutesNow = now.getHours() * 60 + now.getMinutes();
+  const takenAtMinutes = simulatedLateMinutes === undefined
+    ? actualMinutesNow
+    : dose.scheduledMinutes + simulatedLateMinutes;
+  const lateOffsetMinutes = Math.max(0, takenAtMinutes - dose.scheduledMinutes);
+
   dose.status = 'taken';
-  dose.takenAtStr = formatMinutesTo12h(dose.scheduledMinutes + lateOffsetMinutes);
+  dose.takenAtStr = formatMinutesTo12h(takenAtMinutes);
   med.stockRemaining = Math.max(0, med.stockRemaining - med.doseQty);
 
   if (med.scheduleType === 'interval' && lateOffsetMinutes > 0) {
     const nextDoses = state.doses.filter(
       d => d.medId === med.id && d.status === 'pending' && d.scheduledMinutes > dose.scheduledMinutes
     );
-    nextDoses.forEach((nd, idx) => {
-      nd.scheduledMinutes = dose.scheduledMinutes + (med.intervalHours! * 60 * (idx + 1));
-      nd.shiftNote = `Auto-shifted to maintain ${med.intervalHours}h spacing`;
-    });
+    for (const [index, nextDose] of nextDoses.entries()) {
+      const proposedMinutes =
+        takenAtMinutes + (med.intervalHours || 8) * 60 * (index + 1);
+      nextDose.scheduledMinutes = Math.min(proposedMinutes, 1439);
+      nextDose.shiftNote = proposedMinutes > 1439
+        ? `Shift capped at 23:59 for today`
+        : `Auto-shifted +${formatLateDuration(lateOffsetMinutes)} to maintain ${med.intervalHours}h spacing`;
+      await db.saveDose(nextDose);
+    }
   }
 
   // Create intake history entry
-  const now = new Date();
   const dateStr = now.toISOString().split('T')[0];
-  const dateLabel = now.toLocaleDateString('en-US', { month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit' });
-  const timingStatus = lateOffsetMinutes > 0 ? 'On time' : 'On time';
+  const dateLabel = `${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${dose.takenAtStr}`;
+  const timingStatus = lateOffsetMinutes > 0
+    ? `Late (+${formatLateDuration(lateOffsetMinutes)})`
+    : 'On time';
   
   const historyEntry: IntakeHistory = {
     id: 'ih-' + Date.now(),
@@ -1383,7 +1402,10 @@ function renderTodayTab(): string {
       const med = state.medications.find(m => m.id === dose.medId);
       if (!med) continue;
 
-      const isOverdue = dose.status === 'pending' && dose.scheduledMinutes < simulatedNowMinutes;
+      const currentTime = new Date();
+      const actualMinutesNow = currentTime.getHours() * 60 + currentTime.getMinutes();
+      const lateMinutes = Math.max(0, actualMinutesNow - dose.scheduledMinutes);
+      const isOverdue = dose.status === 'pending' && lateMinutes > 0;
       const doseStatusClass = dose.status === 'taken' 
         ? 'bg-emerald-50/60 border-emerald-200/50 opacity-70' 
         : isOverdue 
@@ -1414,6 +1436,7 @@ function renderTodayTab(): string {
               <p class="text-[11px] text-slate-700 font-medium mt-1.5">Take ${formatQuantity(med.doseQty, med.unit)}</p>
               ${med.mealTiming ? `<p class="text-[10px] text-teal-600 font-semibold mt-0.5">📌 ${med.mealTiming}</p>` : ''}
               <p class="text-[10px] text-slate-600 mt-1">${med.scheduleType === 'interval' ? `Every ${med.intervalHours}h • Auto-shifts if taken late` : med.scheduleType === 'fixed' ? `Fixed time schedule` : `As needed (PRN)`}</p>
+              ${isOverdue ? `<span class="inline-flex bg-rose-100 text-rose-700 text-[10px] font-bold px-2 py-1 rounded-full border border-rose-300 mt-1">${formatLateDuration(lateMinutes)} late</span>` : ''}
               ${stockBadge}
             </div>
           </div>
@@ -1426,8 +1449,8 @@ function renderTodayTab(): string {
               : `<button onclick="takeScheduledDose('${dose.id}')" class="flex-1 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs font-bold py-2.5 rounded-lg transition active:scale-95">
                    ✅ Take Now
                  </button>
-                 ${med.scheduleType === 'interval' ? `<button onclick="takeScheduledDose('${dose.id}', 90)" class="bg-amber-400 hover:bg-amber-500 active:bg-amber-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg transition active:scale-95" title="Mark as taken 90 mins late">
-                   Late (+90m)
+                 ${import.meta.env.DEV && med.scheduleType === 'interval' ? `<button onclick="takeScheduledDose('${dose.id}', 90)" class="bg-amber-400 hover:bg-amber-500 active:bg-amber-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg transition active:scale-95" title="Development-only simulation">
+                   Simulate +90m
                  </button>` : ''}
                  <button onclick="snoozeDose('${dose.id}')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold px-3 py-2.5 rounded-lg transition active:scale-95" title="Snooze 15 minutes">
                    Snooze
@@ -1820,9 +1843,12 @@ function renderVitalsTab(): string {
   // ===== VIEW MODE: PRINTABLE LIST =====
   else if (state.vitalsViewMode === 'printable') {
     html += `
-      <div class="mb-4 flex gap-2">
-        <button onclick="window.print()" class="flex-1 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold py-3 rounded-lg transition flex items-center justify-center gap-2">
-          🖨️ Print / PDF
+      <div class="mb-4 flex gap-2 no-print">
+        <button onclick="exportVitalsCsv()" class="flex-1 bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold py-3 rounded-lg transition flex items-center justify-center gap-2">
+          📊 Export Excel / CSV
+        </button>
+        <button onclick="copyVitalsCsv()" class="flex-1 bg-slate-700 hover:bg-slate-800 text-white text-xs font-bold py-3 rounded-lg transition flex items-center justify-center gap-2">
+          Copy CSV
         </button>
       </div>
     `;
@@ -1831,26 +1857,23 @@ function renderVitalsTab(): string {
       html += `<div class="text-center py-12"><p class="text-xs font-medium text-slate-600">No vital readings in this date range</p></div>`;
     } else {
       html += `
-        <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
-          <table class="w-full text-sm">
+        <div class="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm vitals-print-report">
+          <div class="vitals-print-heading print-only">
+            <h1>MedFlow Vital Signs</h1>
+            <p>Date range: ${state.vitalsDateFrom} to ${state.vitalsDateTo}</p>
+            <p>Filtered readings: ${filtered.length}</p>
+          </div>
+          <table class="w-full text-sm vitals-print-table">
             <thead class="bg-slate-900 text-white">
               <tr>
-                <th class="text-left px-4 py-3 font-bold text-xs uppercase tracking-wide">Date & Time</th>
-                <th class="text-left px-4 py-3 font-bold text-xs uppercase tracking-wide">Vital Type</th>
+                <th class="text-left px-4 py-3 font-bold text-xs uppercase tracking-wide">Date</th>
+                <th class="text-left px-4 py-3 font-bold text-xs uppercase tracking-wide">Vital</th>
                 <th class="text-left px-4 py-3 font-bold text-xs uppercase tracking-wide">Reading</th>
-                <th class="text-left px-4 py-3 font-bold text-xs uppercase tracking-wide">Status</th>
-                <th class="text-left px-4 py-3 font-bold text-xs uppercase tracking-wide">Context / Note</th>
+                <th class="text-left px-4 py-3 font-bold text-xs uppercase tracking-wide">Context</th>
               </tr>
             </thead>
             <tbody>
               ${filtered.map((vital, idx) => {
-                const statusBadge = getVitalStatus(vital);
-                const statusColors: Record<string, string> = {
-                  normal: 'text-emerald-700',
-                  elevated: 'text-amber-700',
-                  abnormal: 'text-rose-700',
-                };
-
                 let readingText = '';
                 let vitalType = '';
                 if (vital.type === 'bp') {
@@ -1884,7 +1907,6 @@ function renderVitalsTab(): string {
                     <td class="px-4 py-3 text-xs font-semibold text-slate-900">${vital.dateLabel}</td>
                     <td class="px-4 py-3 text-xs font-semibold text-slate-700">${vitalType}</td>
                     <td class="px-4 py-3 text-xs font-bold text-slate-900">${readingText}</td>
-                    <td class="px-4 py-3 text-xs font-bold ${statusColors[statusBadge.status]}">${statusBadge.label}</td>
                     <td class="px-4 py-3 text-[11px] text-slate-700">${contextAndNote}${noteText}</td>
                   </tr>
                 `;
@@ -1892,18 +1914,6 @@ function renderVitalsTab(): string {
             </tbody>
           </table>
         </div>
-
-        <!-- Print-specific styles -->
-        <style>
-          @media print {
-            body { background: white; }
-            #app { background: white; }
-            .nav-btn, .print\\:hidden { display: none !important; }
-            #modal-backdrop { display: none !important; }
-            table { page-break-inside: avoid; }
-            tr { page-break-inside: avoid; }
-          }
-        </style>
       `;
     }
   }
@@ -2685,6 +2695,96 @@ function setVitalsViewMode(mode: 'cards' | 'printable') {
   renderApp();
 }
 
+function printVitalsList() {
+  state.vitalsViewMode = 'printable';
+  renderApp();
+  requestAnimationFrame(() => window.print());
+}
+
+function getVitalsCsv(): string {
+  const filtered = state.vitalLogs.filter((vital) => {
+    if (vital.date < state.vitalsDateFrom || vital.date > state.vitalsDateTo) return false;
+    if (state.vitalsHistoryFilter === 'all') return true;
+    if (state.vitalsHistoryFilter === 'other') {
+      return ['temp', 'spo2', 'weight'].includes(vital.type);
+    }
+    return vital.type === state.vitalsHistoryFilter;
+  });
+
+  const rows = [
+    ['Date', 'Vital', 'Reading', 'Context'],
+    ...filtered.map((vital) => {
+      let vitalName = '';
+      let reading = '';
+      if (vital.type === 'bp') {
+        vitalName = 'Blood Pressure';
+        reading = `${vital.sys}/${vital.dia} mmHg`;
+      } else if (vital.type === 'sugar') {
+        vitalName = 'Blood Sugar';
+        const value = state.glucoseUnit === 'mg/dL'
+          ? vital.valueMgDl
+          : Math.round(((vital.valueMgDl || 0) / 18.0182) * 10) / 10;
+        reading = `${value} ${state.glucoseUnit}`;
+      } else if (vital.type === 'pulse') {
+        vitalName = 'Pulse Rate';
+        reading = `${vital.value} bpm`;
+      } else if (vital.type === 'temp') {
+        vitalName = 'Temperature';
+        reading = `${vital.value} °C`;
+      } else if (vital.type === 'spo2') {
+        vitalName = 'SpO2';
+        reading = `${vital.value}%`;
+      } else {
+        vitalName = 'Body Weight';
+        reading = `${vital.value} kg`;
+      }
+      return [
+        vital.dateLabel,
+        vitalName,
+        reading,
+        vital.note ? `${vital.context} | ${vital.note}` : vital.context,
+      ];
+    }),
+  ];
+
+  const escapeCell = (value: unknown) => `"${String(value ?? '').replace(/"/g, '""')}"`;
+  return '\uFEFF' + rows.map((row) => row.map(escapeCell).join(',')).join('\r\n');
+}
+
+function exportVitalsCsv() {
+  const csv = getVitalsCsv();
+  const blob = new Blob([csv], { type: 'text/csv;charset=utf-8' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = `medflow-vitals-${state.vitalsDateFrom}-to-${state.vitalsDateTo}.csv`;
+  document.body.appendChild(link);
+  link.click();
+  link.remove();
+  window.setTimeout(() => URL.revokeObjectURL(url), 1000);
+  const rowCount = csv.split(/\r?\n/).length - 1;
+  showToast(`✓ Exported ${rowCount} vital readings`);
+}
+
+async function copyVitalsCsv() {
+  const csv = getVitalsCsv();
+  try {
+    await navigator.clipboard.writeText(csv);
+    showToast('✓ CSV copied to clipboard');
+  } catch {
+    const textarea = document.createElement('textarea');
+    textarea.value = csv;
+    textarea.setAttribute('readonly', '');
+    textarea.style.position = 'fixed';
+    textarea.style.opacity = '0';
+    document.body.appendChild(textarea);
+    textarea.select();
+    const copied = document.execCommand('copy');
+    textarea.remove();
+    showToast(copied ? '✓ CSV copied to clipboard' : 'Unable to copy CSV', copied ? 'success' : 'alert');
+  }
+}
+
 function toggleGlucoseUnit() {
   state.glucoseUnit = state.glucoseUnit === 'mg/dL' ? 'mmol/L' : 'mg/dL';
   renderApp();
@@ -2911,6 +3011,9 @@ async function resetDemoData() {
 (window as any).selectCalendarDate = selectCalendarDate;
 (window as any).confirmCalendarDate = confirmCalendarDate;
 (window as any).setVitalsViewMode = setVitalsViewMode;
+(window as any).printVitalsList = printVitalsList;
+(window as any).exportVitalsCsv = exportVitalsCsv;
+(window as any).copyVitalsCsv = copyVitalsCsv;
 (window as any).toggleGlucoseUnit = toggleGlucoseUnit;
 (window as any).dismissMorningBanner = dismissMorningBanner;
 (window as any).updateVitalsDateRange = updateVitalsDateRange;

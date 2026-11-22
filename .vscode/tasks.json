@@ -98,6 +98,195 @@
 			"command": "npm run build",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "Test MedFlow launcher",
+			"type": "shell",
+			"command": "call .\\run.bat",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Test Windows batch launcher",
+			"type": "shell",
+			"command": "& $env:ComSpec /c 'run.bat'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Inspect launcher server state",
+			"type": "shell",
+			"command": "Get-NetTCPConnection -LocalPort 5173,5174,5175,5176 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalPort,OwningProcess | Format-Table -AutoSize; Get-Process -Id (Get-NetTCPConnection -LocalPort 5173,5174,5175,5176 -State Listen -ErrorAction SilentlyContinue).OwningProcess -ErrorAction SilentlyContinue | Select-Object Id,ProcessName,Path | Format-Table -AutoSize",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Retest strict-port launcher",
+			"type": "shell",
+			"command": "Stop-Process -Id 29152 -Force -ErrorAction SilentlyContinue; & $env:ComSpec /c 'run.bat'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Inspect strict-port failure",
+			"type": "shell",
+			"command": "Get-NetTCPConnection -LocalPort 5173,5174 -State Listen -ErrorAction SilentlyContinue | Select-Object LocalPort,OwningProcess | Format-Table -AutoSize; Get-CimInstance Win32_Process -Filter \"Name='cmd.exe' OR Name='node.exe'\" | Where-Object { $_.CommandLine -match 'vite|MedFlow' } | Select-Object ProcessId,CommandLine | Format-Table -Wrap",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify final MedFlow launcher",
+			"type": "shell",
+			"command": "& $env:ComSpec /c 'run.bat'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Diagnose direct Vite launch",
+			"type": "shell",
+			"command": "node node_modules\\vite\\bin\\vite.js --host 127.0.0.1 --port 5173 --strictPort",
+			"isBackground": true,
+			"problemMatcher": []
+		},
+		{
+			"label": "Test launcher readiness check",
+			"type": "shell",
+			"command": "powershell -NoProfile -Command \"$client = New-Object System.Net.Http.HttpClient; try { $response = $client.GetAsync('http://localhost:5173/').GetAwaiter().GetResult(); Write-Output $response.StatusCode; exit $(if ($response.IsSuccessStatusCode) { 0 } else { 1 }) } catch { Write-Output $_.Exception.Message; exit 1 }\"",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check localhost endpoint",
+			"type": "shell",
+			"command": "curl.exe --max-time 3 -sS -o NUL -w '%{http_code}' http://localhost:5173/",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Find diagnostic Vite PID",
+			"type": "shell",
+			"command": "Get-NetTCPConnection -LocalPort 5173 -State Listen -ErrorAction SilentlyContinue | Select-Object OwningProcess | Format-Table -AutoSize",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Retest final run batch",
+			"type": "shell",
+			"command": "Stop-Process -Id 9080 -Force -ErrorAction SilentlyContinue; & $env:ComSpec /c 'run.bat'",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Build late-dose fix",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check late-dose fix types",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Trace simulated clock usage",
+			"type": "shell",
+			"command": "Select-String -Path src\\main.ts,index.html -Pattern 'simulatedNowMinutes' -AllMatches | Select-Object LineNumber,Line | Format-Table -Wrap",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify real-time dose types",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build real-time dose logic",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check production late labels",
+			"type": "shell",
+			"command": "$bundle = Get-Content dist\\index.html -Raw; $matches = Select-String -Path dist\\assets\\*.js -Pattern 'Late \\(\\+90m\\)|Simulate \\+90m' -SimpleMatch:$false; if ($matches) { $matches | Select-Object -ExpandProperty Line } else { Write-Output 'No fixed or simulated late controls in production bundle' }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Check lateness format types",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build lateness format",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check print table",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build print table",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify vitals print types",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build vitals print fix",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check CSV export",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build CSV export",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final CSV type check",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Final CSV build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

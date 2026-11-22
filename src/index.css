@@ -135,29 +135,95 @@ select:disabled {
 
 /* Print styles (@media print for PDF export) */
 @media print {
-  body {
-    @apply bg-white;
+  @page {
+    size: A4 portrait;
+    margin: 12mm;
+  }
+
+  html,
+  body,
+  #app,
+  #main-content {
+    background: white !important;
+    color: #000 !important;
+    display: block !important;
+    height: auto !important;
+    min-height: 0 !important;
+    max-width: none !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    overflow: visible !important;
+    box-shadow: none !important;
+  }
+
+  body * {
+    visibility: hidden !important;
+  }
+
+  .vitals-print-report,
+  .vitals-print-report * {
+    visibility: visible !important;
+  }
+
+  .vitals-print-report {
+    display: block !important;
+    position: absolute !important;
+    inset: 0 auto auto 0 !important;
+    width: 100vw !important;
+    max-width: none !important;
+    border: 0 !important;
+    border-radius: 0 !important;
+    box-shadow: none !important;
+    overflow: visible !important;
+  }
+
+  .vitals-print-heading {
+    display: block !important;
+    margin-bottom: 6mm;
+  }
+
+  .vitals-print-heading h1 {
+    font-size: 18pt;
+    font-weight: 700;
+    margin-bottom: 2mm;
+  }
+
+  .vitals-print-heading p {
+    font-size: 9pt;
+    margin-bottom: 1mm;
   }
 
   .no-print {
-    @apply hidden !important;
+    display: none !important;
   }
 
-  .print-only {
-    @apply block !important;
+  .vitals-print-table {
+    width: 100% !important;
+    border-collapse: collapse !important;
+    table-layout: fixed;
+    font-size: 9pt !important;
   }
 
-  table {
-    @apply w-full border-collapse;
+  .vitals-print-table th,
+  .vitals-print-table td {
+    border: 1px solid #000 !important;
+    padding: 2.5mm !important;
+    text-align: left;
+    color: #000 !important;
+    background: white !important;
+    overflow-wrap: anywhere;
   }
 
-  th,
-  td {
-    @apply border border-slate-300 px-3 py-2 text-left;
+  .vitals-print-table th {
+    font-weight: 700 !important;
   }
 
-  th {
-    @apply bg-slate-100 font-bold;
+  .vitals-print-table tr {
+    break-inside: avoid;
+  }
+
+  #app {
+    width: 100% !important;
   }
 }
 
