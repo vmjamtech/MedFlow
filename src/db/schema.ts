@@ -119,6 +119,17 @@ export interface MonitoredMedication {
   status: 'taken' | 'upcoming' | 'missed_1h' | 'missed_2h';
 }
 
+export interface GuardianLink {
+  id: string;
+  patientUserId: string;
+  guardianUserId: string;
+  patientCode: string;
+  guardianCode: string;
+  guardianName: string;
+  status: 'pending' | 'approved' | 'revoked';
+  timestamp: string;
+}
+
 export interface AppState {
   currentTab: 'today' | 'vitals' | 'cabinet' | 'guardian' | 'report';
   medications: Medication[];
@@ -131,6 +142,10 @@ export interface AppState {
   guardianSyncEnabled: boolean;
   monitoredPatients: MonitoredPatient[];
   guardianAlerts: GuardianAlert[];
+  incomingRequests: GuardianLink[];
+  approvedGuardians: GuardianLink[];
+  pendingLinkRequests: GuardianLink[];
+  incomingRequestsOpen: boolean;
   
   // Vitals UI filters
   glucoseUnit: 'mg/dL' | 'mmol/L';

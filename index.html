@@ -1,22 +1,69 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="en" class="min-h-screen">
 <head>
   <meta charset="UTF-8" />
-  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
   <title>MedFlow — Offline-First Mobile App</title>
-  <script>
-    // Tailwind CDN fallback for browser dev mode
-    if (!window.tailwind) {
-      document.write('<script src="https://cdn.tailwindcss.com"><\/script>');
-    }
-  </script>
   <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="/dist/assets/index-CCbvoDOs.css" />
   <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    html,
     body {
+      height: 100%;
+      width: 100%;
+      overflow: hidden;
       font-family: 'Inter', sans-serif;
     }
-    
-    /* Mobile safe-area support */
+
+    #app {
+      display: flex;
+      flex-direction: column;
+      height: 100dvh;
+      width: 100%;
+      max-width: 28rem;
+      margin: 0 auto;
+      overflow: hidden;
+      background: #f8fafc;
+      position: relative;
+      box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.1);
+    }
+
+    .phone-scroll {
+      -webkit-overflow-scrolling: touch;
+      overscroll-behavior: contain;
+    }
+
+    [data-restored-vitals] {
+      color: #0f172a;
+    }
+
+    [data-restored-vitals] input,
+    [data-restored-vitals] select {
+      color: #334155 !important;
+      -webkit-text-fill-color: #334155;
+      color-scheme: light;
+    }
+
+    [data-restored-vitals] input::placeholder {
+      color: #94a3b8;
+      -webkit-text-fill-color: #94a3b8;
+    }
+
+    [data-restored-vitals] input::-webkit-calendar-picker-indicator {
+      opacity: 0.8;
+      filter: brightness(0.35);
+    }
+
+    [data-restored-vitals] .text-brand-700 {
+      color: #0f766e !important;
+    }
+
     @supports (padding: max(0px)) {
       body {
         padding-left: max(0px, env(safe-area-inset-left));
@@ -25,24 +72,591 @@
     }
   </style>
 </head>
-<body class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100">
-  <div id="app"></div>
-  
-  <script type="module">
-    // This is a placeholder. The actual app is built by Vite and loaded from main.ts
-    // In development (npm run dev): Vite HMR loads the TypeScript modules
-    // In production (npm run build): Static HTML + JavaScript bundles are served by Capacitor webDir
-    
-    console.log('MedFlow App Initializing...');
-    console.log('Version: 0.1.0');
-    console.log('Platform:', navigator.platform);
-    
-    // Check if we're in Capacitor (native) or browser
-    if (window.Capacitor) {
-      console.log('✓ Capacitor detected — running as native Android app');
-    } else {
-      console.log('✓ Browser detected — running in development mode');
-    }
+<body>
+  <div id="app" class="flex flex-col min-h-screen"></div>
+  <script type="module" src="/dist/assets/index-CcZdplxa.js"></script>
+  <script>
+    (function restoreVitalsUi() {
+      if (!window.state || !window.renderApp) {
+        setTimeout(restoreVitalsUi, 50);
+        return;
+      }
+
+      window.state.selectedTrendVital ||= 'bp';
+
+      window.selectTrendVital = function (type) {
+        window.state.selectedTrendVital = type;
+        window.renderRestoredVitals();
+      };
+
+      window.formatGlucoseValue = function (mgDl) {
+        return window.state.glucoseUnit === 'mmol/L'
+          ? (mgDl / 18.0182).toFixed(1)
+          : Math.round(mgDl);
+      };
+
+      window.openLogVitalModal = function (defaultType) {
+        const backdrop = document.getElementById('modal-backdrop');
+        const body = document.getElementById('modal-body');
+        const type = defaultType || 'bp';
+        if (!backdrop || !body) return;
+
+        document.getElementById('modal-subtitle').textContent = 'Health & Vitals Tracker';
+        document.getElementById('modal-title').textContent = 'Log Vital Sign';
+        body.innerHTML = `
+          <form onsubmit="handleLogVitalFormSubmit(event)" class="space-y-3.5">
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1.5">Vital Sign Category</label>
+              <select id="vital-type-select" onchange="renderVitalInputFields()" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 text-xs font-semibold text-slate-800">
+                <option value="bp" ${type === 'bp' ? 'selected' : ''}>❤️ Blood Pressure (mmHg)</option>
+                <option value="sugar" ${type === 'sugar' ? 'selected' : ''}>🩸 Blood Sugar / Glucose</option>
+                <option value="pulse" ${type === 'pulse' ? 'selected' : ''}>💓 Pulse / Heart Rate (bpm)</option>
+                <option value="temp" ${type === 'temp' ? 'selected' : ''}>🌡️ Body Temperature (°C)</option>
+                <option value="spo2" ${type === 'spo2' ? 'selected' : ''}>🫁 Oxygen Saturation SpO2 (%)</option>
+                <option value="weight" ${type === 'weight' ? 'selected' : ''}>⚖️ Body Weight (kg)</option>
+              </select>
+            </div>
+            <div id="vital-dynamic-fields"></div>
+            <div>
+              <label class="block text-xs font-bold text-slate-700 mb-1">Optional Note / Symptoms</label>
+              <input id="vital-note-input" type="text" placeholder="e.g., feeling great, after medication" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs" />
+            </div>
+            <button type="submit" class="w-full bg-brand-600 hover:bg-brand-700 text-white font-semibold text-xs py-3 rounded-xl shadow-md">Save Vital Reading</button>
+          </form>`;
+        window.renderVitalInputFields();
+        backdrop.classList.remove('hidden');
+      };
+
+      window.renderVitalInputFields = function () {
+        const type = document.getElementById('vital-type-select').value;
+        const container = document.getElementById('vital-dynamic-fields');
+        if (type === 'bp') {
+          container.innerHTML = `
+            <div class="grid grid-cols-3 gap-2">
+              <div><label class="block text-[11px] font-bold mb-1">Systolic</label><input id="vital-bp-sys" type="number" required min="60" max="250" value="120" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold" /></div>
+              <div><label class="block text-[11px] font-bold mb-1">Diastolic</label><input id="vital-bp-dia" type="number" required min="40" max="150" value="78" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs font-bold" /></div>
+              <div><label class="block text-[11px] font-bold mb-1">Pulse (opt)</label><input id="vital-bp-pulse" type="number" min="35" max="220" placeholder="72" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-2.5 py-2 text-xs" /></div>
+            </div>
+            <label class="block text-[11px] font-bold mt-2.5 mb-1">Measurement Posture</label>
+            <select id="vital-context-input" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"><option>Resting • Sitting</option><option>Morning (Before Meds)</option><option>Evening</option></select>`;
+        } else if (type === 'sugar') {
+          container.innerHTML = `
+            <div class="grid grid-cols-2 gap-2">
+              <div><label class="block text-[11px] font-bold mb-1">Glucose Value</label><input id="vital-sugar-val" type="number" step="0.1" required min="20" max="600" value="${window.state.glucoseUnit === 'mmol/L' ? '5.6' : '102'}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold" /></div>
+              <div><label class="block text-[11px] font-bold mb-1">Unit</label><select id="vital-sugar-unit" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"><option value="mg/dL" ${window.state.glucoseUnit === 'mg/dL' ? 'selected' : ''}>mg/dL</option><option value="mmol/L" ${window.state.glucoseUnit === 'mmol/L' ? 'selected' : ''}>mmol/L</option></select></div>
+            </div>
+            <label class="block text-[11px] font-bold mt-2.5 mb-1">Meal Timing Context</label>
+            <select id="vital-context-input" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs"><option>Fasting</option><option>Before Meal</option><option>2h After Meal</option><option>Bedtime</option></select>`;
+        } else {
+          const meta = {
+            pulse: { label: 'Heart Rate (bpm)', value: '74', step: '1', contexts: ['Resting', 'After Walk', 'Morning'] },
+            temp: { label: 'Temperature (°C)', value: '36.8', step: '0.1', contexts: ['Oral', 'Forehead', 'Ear'] },
+            spo2: { label: 'Oxygen Saturation (%)', value: '98', step: '1', contexts: ['Resting', 'Post-Exercise'] },
+            weight: { label: 'Weight (kg)', value: '68.2', step: '0.1', contexts: ['Morning Fasting', 'Evening'] }
+          }[type];
+          container.innerHTML = `
+            <div class="grid grid-cols-2 gap-2">
+              <div><label class="block text-[11px] font-bold mb-1">${meta.label}</label><input id="vital-single-val" type="number" step="${meta.step}" required value="${meta.value}" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs font-bold" /></div>
+              <div><label class="block text-[11px] font-bold mb-1">Context</label><select id="vital-context-input" class="w-full bg-slate-50 border border-slate-200 rounded-xl px-3 py-2 text-xs">${meta.contexts.map(function (context) { return '<option>' + context + '</option>'; }).join('')}</select></div>
+            </div>`;
+        }
+      };
+
+      window.handleLogVitalFormSubmit = function (event) {
+        event.preventDefault();
+        const type = document.getElementById('vital-type-select').value;
+        const context = document.getElementById('vital-context-input').value;
+        const note = document.getElementById('vital-note-input').value.trim();
+        const now = new Date();
+        const date = '2026-11-18';
+        const time = now.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
+        const logBase = { id: 'v-' + Date.now(), type: type, date: date, dateLabel: 'Today, ' + time, context: context, note: note };
+        const additions = [];
+
+        if (type === 'bp') {
+          const sys = Number(document.getElementById('vital-bp-sys').value);
+          const dia = Number(document.getElementById('vital-bp-dia').value);
+          const pulse = Number(document.getElementById('vital-bp-pulse').value);
+          additions.push(Object.assign({}, logBase, { sys: sys, dia: dia, pulse: Number.isFinite(pulse) && pulse > 0 ? pulse : undefined }));
+          if (Number.isFinite(pulse) && pulse > 0) {
+            additions.push({ id: 'v-p-' + Date.now(), type: 'pulse', value: pulse, date: date, dateLabel: 'Today, ' + time, context: 'With BP reading', note: note });
+          }
+          window.state.selectedTrendVital = 'bp';
+        } else if (type === 'sugar') {
+          const raw = Number(document.getElementById('vital-sugar-val').value);
+          const unit = document.getElementById('vital-sugar-unit').value;
+          additions.push(Object.assign({}, logBase, { valueMgDl: unit === 'mmol/L' ? Math.round(raw * 18.0182) : raw }));
+          window.state.selectedTrendVital = 'sugar';
+        } else {
+          additions.push(Object.assign({}, logBase, { value: Number(document.getElementById('vital-single-val').value) }));
+          if (type === 'pulse') window.state.selectedTrendVital = 'pulse';
+        }
+
+        window.state.vitalLogs.unshift.apply(window.state.vitalLogs, additions);
+        localStorage.setItem('medflow_vitalLogs', JSON.stringify(window.state.vitalLogs));
+        window.closeModal();
+        if (window.showToast) window.showToast('✓ Vital reading saved');
+        window.renderApp();
+      };
+
+      function restoreIntervalOptions() {
+        const select = document.getElementById('add-interval-hours');
+        if (!select) return;
+
+        const currentValue = select.value || '8';
+        const options = [1, 2, 3, 4, 6, 8, 12, 24];
+        select.innerHTML = options.map(function (hours) {
+          const selected = String(hours) === currentValue ? ' selected' : '';
+          return '<option value="' + hours + '"' + selected + '>Every ' + hours + ' hour' + (hours === 1 ? '' : 's') + '</option>';
+        }).join('');
+        select.classList.add('text-slate-900');
+      }
+
+      const originalOpenAddMedModal = window.openAddMedModal;
+      window.openAddMedModal = function () {
+        originalOpenAddMedModal.apply(this, arguments);
+        restoreIntervalOptions();
+      };
+
+      const originalToggleScheduleFields = window.toggleScheduleFields;
+      window.toggleScheduleFields = function () {
+        originalToggleScheduleFields.apply(this, arguments);
+        restoreIntervalOptions();
+      };
+
+      window.getFilteredVitalLogs = function () {
+        return window.state.vitalLogs.filter(function (log) {
+          const inRange =
+            (!window.state.vitalsDateFrom || log.date >= window.state.vitalsDateFrom) &&
+            (!window.state.vitalsDateTo || log.date <= window.state.vitalsDateTo);
+          if (!inRange) return false;
+          if (window.state.vitalsHistoryFilter === 'all') return true;
+          if (window.state.vitalsHistoryFilter === 'other') {
+            return ['temp', 'spo2', 'weight'].includes(log.type);
+          }
+          return log.type === window.state.vitalsHistoryFilter;
+        });
+      };
+
+      function renderTrendChart() {
+        const selected = window.state.selectedTrendVital;
+        const logs = window.state.vitalLogs
+          .filter(function (log) { return log.type === selected; })
+          .slice(0, 7)
+          .reverse();
+
+        if (logs.length < 2) {
+          return '<div class="h-28 flex items-center justify-center text-xs text-slate-400">Log at least 2 readings to view trend graph</div>';
+        }
+
+        const width = 310;
+        const height = 105;
+        const padX = 22;
+        const padY = 18;
+        const values = selected === 'bp'
+          ? logs.flatMap(function (log) { return [log.sys, log.dia]; })
+          : logs.map(function (log) {
+              return Number(selected === 'sugar' ? window.formatGlucoseValue(log.valueMgDl) : log.value);
+            });
+        const min = Math.min.apply(null, values) - (selected === 'sugar' && window.state.glucoseUnit === 'mmol/L' ? 0.5 : 5);
+        const max = Math.max.apply(null, values) + (selected === 'sugar' && window.state.glucoseUnit === 'mmol/L' ? 0.5 : 5);
+        const getX = function (index) {
+          return padX + (index / (logs.length - 1)) * (width - padX * 2);
+        };
+        const getY = function (value) {
+          return height - padY - ((value - min) / (max - min || 1)) * (height - padY * 2);
+        };
+        const polyline = function (lineValues, color) {
+          const points = lineValues.map(function (value, index) {
+            return getX(index) + ',' + getY(value);
+          }).join(' ');
+          return '<polyline fill="none" stroke="' + color + '" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round" points="' + points + '" />';
+        };
+
+        if (selected === 'bp') {
+          const systolic = logs.map(function (log) { return log.sys; });
+          const diastolic = logs.map(function (log) { return log.dia; });
+          return '<svg viewBox="0 0 ' + width + ' ' + height + '" class="w-full h-28 overflow-visible">' +
+            polyline(systolic, '#e11d48') + polyline(diastolic, '#0284c7') +
+            logs.map(function (log, index) {
+              return '<circle cx="' + getX(index) + '" cy="' + getY(log.sys) + '" r="3.5" fill="#e11d48" />' +
+                '<text x="' + getX(index) + '" y="' + (getY(log.sys) - 6) + '" text-anchor="middle" font-size="8.5" font-weight="700" fill="#be123c">' + log.sys + '</text>' +
+                '<circle cx="' + getX(index) + '" cy="' + getY(log.dia) + '" r="3.5" fill="#0284c7" />' +
+                '<text x="' + getX(index) + '" y="' + (getY(log.dia) + 12) + '" text-anchor="middle" font-size="8.5" font-weight="700" fill="#0369a1">' + log.dia + '</text>';
+            }).join('') +
+            '</svg><div class="flex items-center justify-center gap-4 text-[10px] font-bold mt-1"><span class="text-rose-600">● Systolic</span><span class="text-sky-600">● Diastolic</span></div>';
+        }
+
+        const singleValues = values;
+        const color = selected === 'sugar' ? '#d97706' : '#0d9488';
+        return '<svg viewBox="0 0 ' + width + ' ' + height + '" class="w-full h-28 overflow-visible">' +
+          polyline(singleValues, color) +
+          singleValues.map(function (value, index) {
+            return '<circle cx="' + getX(index) + '" cy="' + getY(value) + '" r="3.5" fill="' + color + '" />' +
+              '<text x="' + getX(index) + '" y="' + (getY(value) - 7) + '" text-anchor="middle" font-size="9" font-weight="700" fill="#334155">' + value + '</text>';
+          }).join('') +
+          '</svg>';
+      }
+
+      function formatRow(log) {
+        if (log.type === 'bp') return { icon: '❤️', label: 'Blood Pressure', value: log.sys + '/' + log.dia + ' mmHg' + (log.pulse ? ' • ' + log.pulse + ' bpm' : '') };
+        if (log.type === 'sugar') return { icon: '🩸', label: 'Blood Sugar', value: window.formatGlucoseValue(log.valueMgDl) + ' ' + window.state.glucoseUnit };
+        if (log.type === 'pulse') return { icon: '💓', label: 'Pulse Rate', value: log.value + ' bpm' };
+        if (log.type === 'temp') return { icon: '🌡️', label: 'Temperature', value: log.value + ' °C' };
+        if (log.type === 'spo2') return { icon: '🫁', label: 'SpO2 Oxygen', value: log.value + '%' };
+        return { icon: '⚖️', label: 'Body Weight', value: log.value + ' kg' };
+      }
+
+      function getStatus(type, log) {
+        return window.getVitalStatus(type, log || {});
+      }
+
+      window.renderRestoredVitals = function () {
+        const main = document.getElementById('main-content');
+        if (!main || window.state.currentTab !== 'vitals') return;
+
+        const state = window.state;
+        const latest = function (type) { return state.vitalLogs.find(function (log) { return log.type === type; }); };
+        const latestBp = latest('bp');
+        const latestSugar = latest('sugar');
+        const latestPulse = latest('pulse');
+        const latestTemp = latest('temp');
+        const latestSpo2 = latest('spo2');
+        const latestWeight = latest('weight');
+        const bpStatus = getStatus('bp', latestBp);
+        const sugarStatus = getStatus('sugar', latestSugar);
+        const pulseStatus = getStatus('pulse', latestPulse);
+        const filtered = window.getFilteredVitalLogs();
+        const selected = state.selectedTrendVital;
+        const trendName = selected === 'bp' ? 'Blood Pressure Trend' : selected === 'sugar' ? 'Blood Sugar Trend (' + state.glucoseUnit + ')' : 'Pulse Rate Trend (bpm)';
+
+        main.innerHTML = `
+          <div data-restored-vitals class="space-y-4">
+            <div class="flex items-center justify-between gap-2">
+              <button onclick="openLogVitalModal('bp')" class="flex-1 bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold py-2.5 px-3.5 rounded-2xl shadow-sm flex items-center justify-center gap-1.5">🩺 + Log Vital Sign</button>
+              <button onclick="toggleGlucoseUnit()" class="bg-white border border-slate-200 text-slate-700 text-[11px] font-bold px-3 py-2.5 rounded-2xl shrink-0">Glucose: <span class="text-brand-600">${state.glucoseUnit}</span></button>
+            </div>
+
+            <div class="grid grid-cols-1 gap-2.5">
+              <div onclick="selectTrendVital('bp')" class="cursor-pointer bg-white rounded-3xl p-3.5 border ${selected === 'bp' ? 'border-brand-500 ring-2 ring-brand-500/15' : 'border-slate-200/80'} shadow-sm">
+                <div class="flex items-center justify-between gap-2">
+                  <div class="flex items-center gap-2.5">
+                    <div class="w-9 h-9 rounded-2xl bg-rose-50 flex items-center justify-center">❤️</div>
+                    <div><p class="text-[11px] font-bold uppercase tracking-wider text-slate-400">Blood Pressure</p><p class="text-lg font-extrabold text-slate-900">${latestBp ? latestBp.sys + '/' + latestBp.dia : '--/--'} <span class="text-[11px] font-medium text-slate-400">mmHg</span></p></div>
+                  </div>
+                  <div class="text-right"><span class="inline-block text-[10px] font-bold px-2.5 py-0.5 rounded-full ${bpStatus.badge}">${bpStatus.label}</span><p class="text-[10px] text-slate-400 mt-1">${latestBp ? latestBp.dateLabel : 'No reading'}</p></div>
+                </div>
+              </div>
+              <div class="grid grid-cols-2 gap-2.5">
+                <div onclick="selectTrendVital('sugar')" class="cursor-pointer bg-white rounded-3xl p-3.5 border ${selected === 'sugar' ? 'border-brand-500 ring-2 ring-brand-500/15' : 'border-slate-200/80'} shadow-sm">
+                  <div class="flex items-center justify-between mb-1.5"><span class="w-8 h-8 rounded-xl bg-amber-50 flex items-center justify-center text-sm">🩸</span><span class="text-[9px] font-bold px-2 py-0.5 rounded-full ${sugarStatus.badge}">${sugarStatus.label}</span></div>
+                  <p class="text-[10px] font-bold uppercase text-slate-400">Blood Sugar</p><p class="text-base font-extrabold text-slate-900 mt-0.5">${latestSugar ? window.formatGlucoseValue(latestSugar.valueMgDl) + ' ' + state.glucoseUnit : '--'}</p><p class="text-[10px] text-slate-500 mt-0.5 truncate">${latestSugar ? latestSugar.context : 'Tap to log'}</p>
+                </div>
+                <div onclick="selectTrendVital('pulse')" class="cursor-pointer bg-white rounded-3xl p-3.5 border ${selected === 'pulse' ? 'border-brand-500 ring-2 ring-brand-500/15' : 'border-slate-200/80'} shadow-sm">
+                  <div class="flex items-center justify-between mb-1.5"><span class="w-8 h-8 rounded-xl bg-teal-50 flex items-center justify-center text-sm">💓</span><span class="text-[9px] font-bold px-2 py-0.5 rounded-full ${pulseStatus.badge}">${pulseStatus.label}</span></div>
+                  <p class="text-[10px] font-bold uppercase text-slate-400">Pulse Rate</p><p class="text-base font-extrabold text-slate-900 mt-0.5">${latestPulse ? latestPulse.value + ' <span class="text-xs font-medium text-slate-400">bpm</span>' : '--'}</p><p class="text-[10px] text-slate-500 mt-0.5 truncate">${latestPulse ? latestPulse.context : 'Tap to log'}</p>
+                </div>
+              </div>
+              <div class="grid grid-cols-3 gap-2">
+                <button onclick="openLogVitalModal('temp')" class="bg-white border border-slate-200/80 rounded-2xl p-2.5 text-left"><p class="text-[10px] font-bold text-slate-400">🌡️ Temp</p><p class="text-xs font-extrabold mt-0.5">${latestTemp ? latestTemp.value + '°C' : '--'}</p></button>
+                <button onclick="openLogVitalModal('spo2')" class="bg-white border border-slate-200/80 rounded-2xl p-2.5 text-left"><p class="text-[10px] font-bold text-slate-400">🫁 SpO2</p><p class="text-xs font-extrabold mt-0.5">${latestSpo2 ? latestSpo2.value + '%' : '--'}</p></button>
+                <button onclick="openLogVitalModal('weight')" class="bg-white border border-slate-200/80 rounded-2xl p-2.5 text-left"><p class="text-[10px] font-bold text-slate-400">⚖️ Weight</p><p class="text-xs font-extrabold mt-0.5">${latestWeight ? latestWeight.value + ' kg' : '--'}</p></button>
+              </div>
+            </div>
+
+            <div class="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm">
+              <div class="flex items-center justify-between mb-2"><div><h3 class="text-xs font-bold text-slate-800">${trendName}</h3><p class="text-[10px] text-slate-400">Tap any card above to switch metric</p></div><span class="text-[10px] font-bold px-2 py-0.5 rounded-lg bg-slate-100">Last 7</span></div>
+              ${renderTrendChart()}
+            </div>
+
+            <div class="bg-white rounded-3xl p-4 border border-slate-200/80 shadow-sm space-y-3">
+              <div class="flex items-center justify-between gap-2">
+                <h3 class="text-xs font-bold text-slate-900">Vital Sign Logs (${filtered.length})</h3>
+                <div class="bg-slate-100 p-0.5 rounded-xl flex text-[10px] font-bold">
+                  <button onclick="setVitalsViewMode('cards')" class="px-2.5 py-1 rounded-lg ${state.vitalsViewMode === 'cards' ? 'bg-white text-slate-900' : 'text-slate-500'}">Cards</button>
+                  <button onclick="setVitalsViewMode('printable')" class="px-2.5 py-1 rounded-lg ${state.vitalsViewMode === 'printable' ? 'bg-white text-brand-700' : 'text-slate-500'}">Printable List</button>
+                </div>
+              </div>
+              <div class="bg-slate-50 rounded-2xl p-2.5 border border-slate-200/80 space-y-2">
+                <div class="grid grid-cols-2 gap-2">
+                  <div><label class="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">From Date</label><input type="date" value="${state.vitalsDateFrom}" onchange="updateVitalsDateRange(this.value, null)" class="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px]" /></div>
+                  <div><label class="block text-[9px] font-bold uppercase text-slate-500 mb-0.5">To Date</label><input type="date" value="${state.vitalsDateTo}" onchange="updateVitalsDateRange(null, this.value)" class="w-full bg-white border border-slate-200 rounded-lg px-2 py-1 text-[10px]" /></div>
+                </div>
+                <div class="flex flex-wrap items-center justify-between gap-1.5">
+                  <div class="flex gap-1"><button onclick="applyVitalsDatePreset(1)" class="text-[10px] font-semibold bg-white border border-slate-200 px-2 py-0.5 rounded-md">Today</button><button onclick="applyVitalsDatePreset(3)" class="text-[10px] font-semibold bg-white border border-slate-200 px-2 py-0.5 rounded-md">Last 3d</button><button onclick="applyVitalsDatePreset(7)" class="text-[10px] font-semibold bg-white border border-slate-200 px-2 py-0.5 rounded-md">7 Days</button></div>
+                  ${state.vitalsViewMode === 'printable' ? '<button onclick="window.print()" class="text-[10px] font-bold bg-slate-900 text-white px-2.5 py-1 rounded-lg">🖨️ Print / PDF</button>' : ''}
+                </div>
+              </div>
+              <div class="flex gap-1.5 overflow-x-auto pb-0.5">
+                ${[{id:'all',label:'All'},{id:'bp',label:'BP'},{id:'sugar',label:'Sugar'},{id:'pulse',label:'Pulse'},{id:'other',label:'Other'}].map(function (filter) {
+                  return "<button onclick=\"setVitalsHistoryFilter('" + filter.id + "')\" class=\"text-[10px] font-bold px-2.5 py-1 rounded-full shrink-0 " + (state.vitalsHistoryFilter === filter.id ? 'bg-slate-900 text-white' : 'bg-slate-100 text-slate-600') + '">' + filter.label + '</button>';
+                }).join('')}
+              </div>
+              ${filtered.length === 0 ? '<p class="text-xs text-slate-400 text-center py-4">No vital sign logs match this date range.</p>' :
+                state.vitalsViewMode === 'printable' ? `<div class="overflow-x-auto border border-slate-200 rounded-2xl"><table class="w-full text-left border-collapse"><thead><tr class="bg-slate-100 text-[9px] font-bold uppercase text-slate-600 border-b"><th class="py-2 px-2">Date</th><th class="py-2 px-2">Vital</th><th class="py-2 px-2">Reading</th><th class="py-2 px-2">Context</th></tr></thead><tbody class="divide-y divide-slate-100 text-[10px]">${filtered.map(function (log) { const info = formatRow(log); return '<tr><td class="py-2 px-2 whitespace-nowrap">' + log.date.slice(5) + '</td><td class="py-2 px-2 font-bold">' + info.label + '</td><td class="py-2 px-2 font-extrabold">' + info.value + '</td><td class="py-2 px-2">' + log.context + '</td></tr>'; }).join('')}</tbody></table></div>` :
+                `<div class="space-y-2">${filtered.map(function (log) { const info = formatRow(log); const status = getStatus(log.type, log); return '<div class="p-3 rounded-2xl bg-slate-50 border border-slate-200/70 flex items-center justify-between gap-2"><div class="flex items-center gap-2.5 min-w-0"><span class="text-base">' + info.icon + '</span><div class="min-w-0"><div class="flex items-center gap-1.5 flex-wrap"><p class="text-xs font-bold text-slate-900">' + info.value + '</p><span class="text-[9px] font-bold px-2 py-0.5 rounded-full ' + status.badge + '">' + status.label + '</span></div><p class="text-[10px] text-slate-500 mt-0.5">' + log.dateLabel + ' • ' + log.context + '</p>' + (log.note ? '<p class="text-[10px] text-brand-700 mt-0.5">📝 ' + log.note + '</p>' : '') + '</div></div></div>'; }).join('')}</div>`}
+            </div>
+          </div>`;
+      };
+
+      function positionGuardianControls() {
+        if (window.state.currentTab !== 'guardian') return;
+        if (window.state.guardianSubView !== 'monitoring') return;
+
+        if (document.querySelector('[data-guardian-secure-view]')) return;
+        window.renderRestoredGuardian();
+      }
+
+      function persistGuardianState() {
+        localStorage.setItem('medflow_guardian_incoming', JSON.stringify(window.state.incomingRequests));
+        localStorage.setItem('medflow_guardian_approved', JSON.stringify(window.state.approvedGuardians));
+        localStorage.setItem('medflow_guardian_pending', JSON.stringify(window.state.pendingLinkRequests));
+        localStorage.setItem('medflow_guardian_monitored', JSON.stringify(window.secureMonitoredPatients));
+      }
+
+      function loadGuardianState() {
+        try {
+          window.state.incomingRequests = JSON.parse(localStorage.getItem('medflow_guardian_incoming') || '[]');
+          window.state.approvedGuardians = JSON.parse(localStorage.getItem('medflow_guardian_approved') || '[]');
+          window.state.pendingLinkRequests = JSON.parse(localStorage.getItem('medflow_guardian_pending') || '[]');
+          const storedPatients = localStorage.getItem('medflow_guardian_monitored');
+          window.secureMonitoredPatients = storedPatients ? JSON.parse(storedPatients) : [
+            { id: 'pat-elena', patientName: 'Elena R. (Mother)', patientCode: 'MED-3104', status: 'approved', guardianName: 'Daughter', adherence: 96, lastSync: '2 mins ago', meds: [{ name: 'Losartan 50mg (1 tablet)', time: '✓ 08:00 AM' }, { name: 'Atorvastatin 20mg (1 tablet)', time: '⏱ 08:00 PM' }] },
+            { id: 'pat-roberto', patientName: 'Roberto R. (Father)', patientCode: 'MED-9921', status: 'approved', guardianName: 'Son', adherence: 84, lastSync: 'Just now', meds: [{ name: 'Insulin Glargine (12 units)', time: '⚠️ 07:00 AM' }, { name: 'Metformin 500mg (1 tablet)', time: '⏱ 12:30 PM' }] }
+          ];
+        } catch (error) {
+          console.error('Unable to load Guardian local state', error);
+        }
+      }
+
+      function isValidPatientCode(code) {
+        return /^MED-[A-Z0-9]{4,12}$/i.test(String(code || '').trim());
+      }
+
+      function escapeGuardianHtml(value) {
+        return String(value == null ? '' : value)
+          .replaceAll('&', '&amp;')
+          .replaceAll('<', '&lt;')
+          .replaceAll('>', '&gt;')
+          .replaceAll('"', '&quot;')
+          .replaceAll("'", '&#039;');
+      }
+
+      window.requestPatientAccess = function () {
+        const input = document.getElementById('link-patient-code');
+        const code = String(input ? input.value : '').trim().toUpperCase();
+        if (!isValidPatientCode(code)) {
+          window.showToast && window.showToast('Enter a valid patient code (MED-XXXX)', 'warning');
+          return;
+        }
+        if (window.state.pendingLinkRequests.some(function (request) { return request.patientCode === code; })) {
+          window.showToast && window.showToast('Request already awaiting owner confirmation', 'warning');
+          return;
+        }
+        if (window.secureMonitoredPatients.some(function (patient) { return patient.status === 'approved' && patient.patientCode === code; })) {
+          window.showToast && window.showToast('Access to this patient is already approved', 'warning');
+          return;
+        }
+
+        const request = {
+          id: 'request-' + Date.now(),
+          patientCode: code,
+          patientName: code === window.state.myPatientCode ? (window.state.myPatientName || 'This device') : 'Patient ' + code.slice(-4),
+          guardianCode: 'GUARD-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
+          guardianName: 'Caregiver',
+          status: 'pending',
+          timestamp: new Date().toISOString()
+        };
+        window.state.pendingLinkRequests.unshift(request);
+        if (code === window.state.myPatientCode) window.state.incomingRequests.unshift(Object.assign({}, request));
+        persistGuardianState();
+        window.renderRestoredGuardian();
+        window.showToast && window.showToast('⏳ Request sent — patient approval is required');
+      };
+
+      window.simulateIncomingRequest = function () {
+        const request = {
+          id: 'request-demo-' + Date.now(),
+          patientCode: window.state.myPatientCode,
+          patientName: window.state.myPatientName || 'This patient',
+          guardianCode: 'GUARD-' + Math.random().toString(36).slice(2, 6).toUpperCase(),
+          guardianName: 'Test Caregiver',
+          status: 'pending',
+          timestamp: new Date().toISOString()
+        };
+        window.state.incomingRequests.unshift(request);
+        persistGuardianState();
+        window.renderRestoredGuardian();
+      };
+
+      window.saveMyPatientName = function () {
+        const input = document.getElementById('my-patient-name-input');
+        const name = String(input ? input.value : '').trim().slice(0, 80);
+        if (!name) {
+          window.showToast && window.showToast('Enter a patient name or identifier', 'warning');
+          return;
+        }
+        window.state.myPatientName = name;
+        localStorage.setItem('medflow_myPatientName', name);
+        window.showToast && window.showToast('✓ Patient name saved');
+      };
+
+      window.openIncomingRequests = function () {
+        window.state.incomingRequestsOpen = true;
+        window.renderRestoredGuardian();
+      };
+
+      window.closeIncomingRequests = function () {
+        window.state.incomingRequestsOpen = false;
+        window.renderRestoredGuardian();
+      };
+
+      window.acceptGuardianRequest = function (requestId) {
+        const requestIndex = window.state.incomingRequests.findIndex(function (request) { return request.id === requestId; });
+        if (requestIndex < 0) return;
+        const request = window.state.incomingRequests.splice(requestIndex, 1)[0];
+        const approved = Object.assign({}, request, { status: 'approved', approvedAt: new Date().toISOString() });
+        window.state.approvedGuardians.unshift(approved);
+        window.state.pendingLinkRequests = window.state.pendingLinkRequests.filter(function (pending) { return pending.id !== requestId; });
+        window.secureMonitoredPatients = window.secureMonitoredPatients.filter(function (patient) { return patient.patientCode !== request.patientCode || patient.id === 'pat-' + request.id; });
+        if (window.state.myPatientCode === request.patientCode) {
+          window.secureMonitoredPatients.unshift({
+            id: 'pat-' + request.id,
+            patientName: request.patientName,
+            patientCode: request.patientCode,
+            status: 'approved',
+            guardianName: request.guardianName,
+            adherence: 100,
+            lastSync: 'Just now',
+            meds: []
+          });
+        }
+        persistGuardianState();
+        window.showToast && window.showToast('✓ Guardian access approved');
+        window.renderRestoredGuardian();
+      };
+
+      window.declineGuardianRequest = function (requestId) {
+        window.state.incomingRequests = window.state.incomingRequests.filter(function (request) { return request.id !== requestId; });
+        window.state.pendingLinkRequests = window.state.pendingLinkRequests.filter(function (request) { return request.id !== requestId; });
+        persistGuardianState();
+        window.showToast && window.showToast('Request declined — no data shared');
+        window.renderRestoredGuardian();
+      };
+
+      window.cancelPendingRequest = function (requestId) {
+        window.declineGuardianRequest(requestId);
+      };
+
+      window.removeGuardian = function (requestId) {
+        const removed = window.state.approvedGuardians.find(function (guardian) { return guardian.id === requestId; });
+        window.state.approvedGuardians = window.state.approvedGuardians.filter(function (guardian) { return guardian.id !== requestId; });
+        window.secureMonitoredPatients = window.secureMonitoredPatients.filter(function (patient) { return !removed || patient.patientCode !== removed.patientCode; });
+        persistGuardianState();
+        window.showToast && window.showToast('✓ Guardian access revoked');
+        window.renderRestoredGuardian();
+      };
+
+      window.removeMonitoredPatient = function (patientId) {
+        const patient = window.secureMonitoredPatients.find(function (item) { return item.id === patientId; });
+        window.secureMonitoredPatients = window.secureMonitoredPatients.filter(function (item) { return item.id !== patientId; });
+        if (patient) {
+          window.state.approvedGuardians = window.state.approvedGuardians.filter(function (guardian) { return guardian.patientCode !== patient.patientCode; });
+        }
+        persistGuardianState();
+        window.showToast && window.showToast('✓ Patient disconnected — access removed');
+        window.renderRestoredGuardian();
+      };
+
+      window.renderRestoredGuardian = function () {
+        const main = document.getElementById('main-content');
+        if (!main || window.state.currentTab !== 'guardian') return;
+        const monitoring = window.state.guardianSubView === 'monitoring';
+        const incomingCount = window.state.incomingRequests.filter(function (request) { return request.status === 'pending'; }).length;
+
+        if (!monitoring) {
+          main.innerHTML = `
+            <div data-guardian-secure-view class="space-y-4">
+              <div class="bg-gradient-to-br from-teal-600 via-teal-500 to-cyan-500 text-white rounded-2xl p-5 shadow-lg">
+                <p class="text-xs font-bold uppercase tracking-widest opacity-90 mb-3">🔐 Your Patient Code</p>
+                <div class="flex items-center gap-2"><div class="flex-1 bg-white/20 border border-white/30 rounded-xl px-4 py-3"><p class="text-xl font-black font-mono tracking-wider">${window.state.myPatientCode}</p></div><button onclick="copyPatientCode()" class="bg-white/90 text-teal-600 px-4 py-3 rounded-lg text-xs font-black">Copy</button></div>
+                <p class="text-xs mt-3 opacity-95">A guardian request remains locked until you explicitly approve it.</p>
+                <div class="bg-white/10 border border-white/20 rounded-xl p-3 mt-4">
+                  <label for="my-patient-name-input" class="block text-xs font-bold uppercase tracking-wide opacity-90 mb-2">Your Name / Identifier</label>
+                  <input id="my-patient-name-input" type="text" maxlength="80" placeholder="E.g., Jimmy" value="${escapeGuardianHtml(window.state.myPatientName)}" class="w-full bg-white/20 border border-white/30 rounded-lg px-3 py-2.5 text-xs font-semibold text-white placeholder-white/60" />
+                  <p class="text-[10px] opacity-80 mt-2">Caregivers can confirm this identifier before requesting access.</p>
+                  <button onclick="saveMyPatientName()" class="w-full mt-3 bg-white/90 text-teal-600 text-xs font-bold py-2 rounded-lg">Save Name</button>
+                </div>
+              </div>
+              <button onclick="openIncomingRequests()" class="w-full flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs font-bold text-amber-700">
+                <span>🔔 Incoming Requests</span>${incomingCount ? '<span class="bg-rose-600 text-white rounded-full px-2 py-0.5">' + incomingCount + '</span>' : '<span class="text-amber-500">0</span>'}
+              </button>
+              <button onclick="simulateIncomingRequest()" class="w-full bg-slate-100 text-slate-700 text-xs font-bold py-2.5 rounded-xl">Simulate Incoming Request</button>
+              ${window.state.incomingRequestsOpen ? `<div class="bg-white border border-slate-200 rounded-2xl p-4 space-y-3"><div class="flex items-center justify-between"><h3 class="text-xs font-black uppercase text-slate-900">Pending Caregiver Requests</h3><button onclick="closeIncomingRequests()" class="text-xs font-bold text-slate-500">Close</button></div>${window.state.incomingRequests.length ? window.state.incomingRequests.map(function (request) {
+                const time = new Date(request.timestamp).toLocaleString();
+                return '<div class="bg-slate-50 border border-slate-200 rounded-xl p-3"><p class="text-xs font-bold text-slate-900">' + escapeGuardianHtml(request.guardianName) + '</p><p class="text-[11px] text-slate-500">' + escapeGuardianHtml(request.guardianCode) + ' • ' + escapeGuardianHtml(time) + '</p><p class="text-[10px] text-amber-700 mt-1">Locked — no patient data shared</p><div class="grid grid-cols-2 gap-2 mt-3"><button onclick="acceptGuardianRequest(this.dataset.id)" data-id="' + escapeGuardianHtml(request.id) + '" class="bg-teal-600 text-white text-xs font-bold py-2 rounded-lg">✓ Accept</button><button onclick="declineGuardianRequest(this.dataset.id)" data-id="' + escapeGuardianHtml(request.id) + '" class="bg-rose-50 text-rose-700 text-xs font-bold py-2 rounded-lg">✕ Decline</button></div></div>';
+              }).join('') : '<p class="text-xs text-slate-500">No pending requests.</p>'}</div>` : ''}
+              <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+                <h3 class="text-xs font-black uppercase text-slate-900 mb-3">✓ Approved Guardians</h3>
+                ${window.state.approvedGuardians.length ? '<div class="space-y-2">' + window.state.approvedGuardians.map(function (guardian) {
+                  return '<div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2"><div><p class="text-sm font-bold text-slate-900">' + escapeGuardianHtml(guardian.guardianName) + '</p><p class="text-[10px] text-slate-500">' + escapeGuardianHtml(guardian.guardianCode) + '</p></div><button onclick="removeGuardian(this.dataset.id)" data-id="' + escapeGuardianHtml(guardian.id) + '" class="bg-rose-100 text-rose-700 text-xs font-bold px-3 py-1.5 rounded-lg">Remove</button></div>';
+                }).join('') + '</div>' : '<p class="text-xs text-slate-500">No approved guardians.</p>'}
+              </div>
+              <button onclick="setGuardianSubView('monitoring')" class="w-full bg-teal-50 text-teal-700 text-xs font-bold py-3 rounded-xl">← Back to Family</button>
+            </div>`;
+          return;
+        }
+
+        const approvedPatients = window.secureMonitoredPatients.filter(function (patient) { return patient.status === 'approved'; });
+        main.innerHTML = `
+          <div data-guardian-secure-view class="space-y-4">
+            <div class="flex gap-2">
+              <button onclick="toggleGuardianSync()" class="flex-1 ${window.state.guardianSyncEnabled ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700'} text-xs font-bold py-3 rounded-lg">${window.state.guardianSyncEnabled ? '🛡️ Sync ON' : '⏸ Sync OFF'}</button>
+              <button onclick="setGuardianSubView('mycode')" class="flex-1 bg-slate-100 text-slate-700 text-xs font-bold py-3 rounded-lg">My Code</button>
+            </div>
+            ${approvedPatients.length ? '<div class="bg-gradient-to-br from-rose-600 to-rose-700 text-white rounded-2xl p-4"><p class="text-xs font-black uppercase">⚠️ Approved-Guardian Alert</p><p class="text-sm font-bold mt-2">Medication alerts are visible because access was approved.</p></div>' : ''}
+            <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
+              <label class="block text-xs font-black uppercase text-slate-900 mb-2.5">+ Request Patient Access</label>
+              <div class="flex gap-2"><input id="link-patient-code" type="text" placeholder="E.g., MED-7429" class="flex-1 bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-slate-900" /><button onclick="requestPatientAccess()" class="bg-teal-600 text-white text-xs font-bold px-4 py-2.5 rounded-lg">Request</button></div>
+            </div>
+            ${window.state.pendingLinkRequests.length ? `<div class="bg-amber-50 border border-amber-200 rounded-2xl p-4"><h3 class="text-xs font-black uppercase text-amber-900 mb-3">⏳ Awaiting Owner Confirmation</h3><div class="space-y-2">${window.state.pendingLinkRequests.map(function (request) {
+              return '<div class="bg-white border border-amber-200 rounded-xl p-3 flex items-center justify-between"><div><p class="text-sm font-bold text-slate-900">' + escapeGuardianHtml(request.patientCode) + '</p><p class="text-[10px] text-amber-700">Locked — no medication data available</p></div><button onclick="cancelPendingRequest(this.dataset.id)" data-id="' + escapeGuardianHtml(request.id) + '" class="text-xs font-bold text-rose-600">Cancel</button></div>';
+            }).join('')}</div></div>` : ''}
+            <div><h3 class="text-sm font-bold text-slate-900 mb-3">👥 Monitored Patients</h3><div class="space-y-3">${approvedPatients.length ? approvedPatients.map(function (patient) {
+              return '<div class="bg-white border border-slate-200 rounded-xl p-4"><div class="flex items-start justify-between gap-2"><div><p class="text-sm font-bold text-slate-900">' + escapeGuardianHtml(patient.patientName) + '</p><p class="text-xs text-slate-500">Code: ' + escapeGuardianHtml(patient.patientCode) + '</p><p class="text-[10px] text-slate-400">Synced ' + escapeGuardianHtml(patient.lastSync) + '</p></div><span class="text-sm font-black text-teal-600">' + patient.adherence + '% Adh.</span></div><div class="space-y-2 my-3">' + patient.meds.map(function (med) { return '<div class="flex justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs"><span class="font-semibold text-slate-700">' + escapeGuardianHtml(med.name) + '</span><span class="font-bold text-slate-500">' + escapeGuardianHtml(med.time) + '</span></div>'; }).join('') + '</div><button onclick="removeMonitoredPatient(this.dataset.id)" data-id="' + escapeGuardianHtml(patient.id) + '" class="w-full bg-rose-50 text-rose-700 text-xs font-bold py-2 rounded-lg">Remove</button></div>';
+            }).join('') : '<p class="text-xs text-slate-500">No approved monitored patients. Requests remain locked until accepted.</p>'}</div></div>
+          </div>`;
+      };
+
+      loadGuardianState();
+      window.state.myPatientName = localStorage.getItem('medflow_myPatientName') || window.state.myPatientName || '';
+      window.incomingRequestsOpen = false;
+
+      const originalSetGuardianSubView = window.setGuardianSubView;
+      window.setGuardianSubView = function (view) {
+        originalSetGuardianSubView(view);
+        window.renderRestoredGuardian();
+      }
+
+      const originalRender = window.renderApp;
+      window.renderApp = function () {
+        originalRender.apply(this, arguments);
+        if (window.state.currentTab === 'vitals') {
+          window.renderRestoredVitals();
+        }
+        positionGuardianControls();
+      };
+
+      const observer = new MutationObserver(function () {
+        if (window.state.currentTab === 'vitals' && !document.querySelector('[data-restored-vitals]')) {
+          window.renderRestoredVitals();
+        }
+        positionGuardianControls();
+      });
+      observer.observe(document.getElementById('app'), { childList: true, subtree: true });
+      window.renderRestoredVitals();
+      positionGuardianControls();
+    })();
   </script>
 </body>
 </html>
