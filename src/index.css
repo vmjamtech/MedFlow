@@ -24,6 +24,10 @@ body {
   -moz-osx-font-smoothing: grayscale;
 }
 
+#app-splash-screen {
+  will-change: opacity;
+}
+
 /* Scrollbar styling (subtle, unobtrusive) */
 ::-webkit-scrollbar {
   width: 4px;

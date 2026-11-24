@@ -15,6 +15,18 @@ export async function renderTodayTab(): Promise<HTMLElement> {
   const medications = await db.getMedications();
   const doses = await db.getDoses();
 
+  if (medications.length === 0 && doses.length === 0) {
+    container.innerHTML = `
+      <section class="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-center shadow-sm">
+        <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-teal-50 text-2xl">💊</div>
+        <p class="text-sm font-bold text-slate-800">No medications scheduled for today</p>
+        <p class="mt-1 text-xs text-slate-500">Add your first medication to build today's regimen.</p>
+        <button onclick="openAddMedModal()" class="mt-4 rounded-lg bg-teal-600 px-4 py-2.5 text-xs font-bold text-white">+ Add Medication</button>
+      </section>
+    `;
+    return container;
+  }
+
   // Group doses by time-of-day (Morning, Afternoon, Evening)
   const groups: { [key: string]: Dose[] } = { Morning: [], Afternoon: [], Evening: [] };
   doses.forEach((dose) => {

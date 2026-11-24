@@ -407,3 +407,66 @@ BEGIN
   END IF;
 END;
 $$;
+
+-- In-app APK update catalogue. Client access is strictly read-only; admins publish
+-- releases and APK files through Supabase Dashboard or another server-side process.
+CREATE TABLE IF NOT EXISTS public.app_releases (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  version TEXT NOT NULL,
+  apk_url TEXT NOT NULL,
+  release_notes TEXT NOT NULL DEFAULT '',
+  file_name TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+ALTER TABLE public.app_releases
+  ADD COLUMN IF NOT EXISTS release_notes TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS file_name TEXT DEFAULT '',
+  ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
+
+CREATE UNIQUE INDEX IF NOT EXISTS app_releases_version_unique_idx
+  ON public.app_releases(version);
+CREATE INDEX IF NOT EXISTS app_releases_created_at_idx
+  ON public.app_releases(created_at DESC);
+
+ALTER TABLE public.app_releases ENABLE ROW LEVEL SECURITY;
+
+DROP POLICY IF EXISTS "App releases public read" ON public.app_releases;
+DROP POLICY IF EXISTS "App releases authenticated publish" ON public.app_releases;
+CREATE POLICY "App releases public read"
+  ON public.app_releases FOR SELECT
+  TO anon, authenticated
+  USING (TRUE);
+
+GRANT SELECT ON public.app_releases TO anon, authenticated;
+REVOKE INSERT, UPDATE, DELETE, TRUNCATE
+  ON public.app_releases FROM anon, authenticated;
+
+INSERT INTO storage.buckets (
+  id,
+  name,
+  public,
+  file_size_limit,
+  allowed_mime_types
+)
+VALUES (
+  'apk-releases',
+  'apk-releases',
+  TRUE,
+  52428800,
+  ARRAY['application/vnd.android.package-archive', 'application/octet-stream']
+)
+ON CONFLICT (id) DO UPDATE SET
+  public = TRUE,
+  file_size_limit = 52428800,
+  allowed_mime_types = EXCLUDED.allowed_mime_types;
+
+DROP POLICY IF EXISTS "APK releases public read" ON storage.objects;
+DROP POLICY IF EXISTS "APK releases authenticated upload" ON storage.objects;
+DROP POLICY IF EXISTS "APK releases authenticated replace" ON storage.objects;
+CREATE POLICY "APK releases public read"
+  ON storage.objects FOR SELECT
+  TO anon, authenticated
+  USING (bucket_id = 'apk-releases');
+
+-- Dashboard/service-role writes remain available outside client RLS access.

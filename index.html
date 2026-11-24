@@ -90,9 +90,109 @@
     body, html {
       overflow-x: hidden;
     }
+
+    .medflow-splash {
+      position: fixed;
+      inset: 0;
+      z-index: 9999;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      color: #fff;
+      background: linear-gradient(to bottom, #0f766e, #115e59, #0f172a);
+      opacity: 1;
+      transition: opacity 500ms ease;
+    }
+
+    .medflow-splash.is-leaving {
+      opacity: 0;
+    }
+
+    .medflow-splash-logo {
+      width: 6rem;
+      height: 6rem;
+      margin-bottom: 1.25rem;
+      border-radius: 1.5rem;
+      overflow: hidden;
+      box-shadow: 0 25px 50px -12px rgb(15 23 42 / 0.55);
+      animation: medflow-splash-pulse 1.8s ease-in-out infinite;
+    }
+
+    .medflow-splash-logo img,
+    .medflow-splash-logo svg {
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+    }
+
+    .medflow-splash h1 {
+      font-size: 1.875rem;
+      font-weight: 800;
+      letter-spacing: -0.025em;
+    }
+
+    .medflow-splash > p {
+      margin-top: 0.25rem;
+      color: #99f6e4;
+      font-size: 0.875rem;
+    }
+
+    .medflow-splash-progress {
+      width: min(15rem, 68vw);
+      height: 0.35rem;
+      margin-top: 2rem;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgb(255 255 255 / 0.18);
+    }
+
+    .medflow-splash-progress span {
+      display: block;
+      width: 0;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #5eead4, #fff);
+      animation: medflow-splash-progress 3s linear forwards;
+    }
+
+    #medflow-splash-status {
+      min-height: 1.25rem;
+      margin-top: 0.9rem;
+      color: rgb(204 251 241 / 0.88);
+      font-size: 0.6875rem;
+      font-weight: 700;
+      letter-spacing: 0.02em;
+    }
+
+    @keyframes medflow-splash-progress {
+      to { width: 100%; }
+    }
+
+    @keyframes medflow-splash-pulse {
+      50% { opacity: 0.78; transform: scale(0.97); }
+    }
   </style>
 </head>
 <body>
+  <div id="app-splash-screen" class="medflow-splash" role="status" aria-live="polite">
+    <div class="medflow-splash-logo">
+      <img id="medflow-splash-image" src="/logo.png" alt="MedFlow" onerror="this.hidden=true; document.getElementById('medflow-splash-fallback').hidden=false;" />
+      <svg id="medflow-splash-fallback" viewBox="0 0 96 96" aria-label="MedFlow" hidden>
+        <rect width="96" height="96" rx="26" fill="#f0fdfa"/>
+        <path d="M26 47h44v26H26z" fill="#0f766e" opacity=".18"/>
+        <path d="M42 20h12v18h18v12H54v18H42V50H24V38h18z" fill="#0f766e"/>
+        <circle cx="72" cy="24" r="10" fill="#5eead4"/>
+        <path d="m67 24 3 3 6-7" fill="none" stroke="#115e59" stroke-linecap="round" stroke-linejoin="round" stroke-width="3"/>
+      </svg>
+    </div>
+    <h1>MedFlow</h1>
+    <p>Personal Regimen &amp; Guardian Sync</p>
+    <div class="medflow-splash-progress" aria-hidden="true">
+      <span id="medflow-splash-progress-bar"></span>
+    </div>
+    <span id="medflow-splash-status">Initializing encrypted local vault...</span>
+  </div>
   <div id="app" class="flex flex-col min-h-screen"></div>
   <script type="module" src="/src/main.ts"></script>
   <script>
@@ -495,7 +595,7 @@
       function loadGuardianState() {
         try {
           window.state.guardianOnline = window.GuardianSyncService?.isOnline() || false;
-          if (!window.state.guardianDemoMode) {
+          if (!window.state.demoModeEnabled) {
             window.state.incomingRequests = window.state.incomingRequests || [];
             window.state.approvedGuardians = window.state.approvedGuardians || [];
             window.state.pendingLinkRequests = window.state.pendingLinkRequests || [];
@@ -591,6 +691,7 @@
       };
 
       window.simulateIncomingRequest = function () {
+        if (!window.state.demoModeEnabled) return;
         const request = {
           id: 'request-demo-' + Date.now(),
           patientCode: window.state.myPatientCode,
@@ -869,7 +970,7 @@
               <button onclick="openIncomingRequests()" class="w-full flex items-center justify-between bg-amber-50 border border-amber-200 rounded-xl px-4 py-3 text-xs font-bold text-amber-700">
                 <span>🔔 Incoming Requests</span>${incomingCount ? '<span class="bg-rose-600 text-white rounded-full px-2 py-0.5">' + incomingCount + '</span>' : '<span class="text-amber-500">0</span>'}
               </button>
-              ${window.__MEDFLOW_DEV__ ? '<button onclick="simulateIncomingRequest()" class="w-full bg-slate-100 text-slate-700 text-xs font-bold py-2.5 rounded-xl">Simulate Incoming Request</button>' : ''}
+              ${window.state.demoModeEnabled ? '<button onclick="simulateIncomingRequest()" class="w-full bg-slate-100 text-slate-700 text-xs font-bold py-2.5 rounded-xl">Simulate Incoming Request</button>' : ''}
               ${window.state.incomingRequestsOpen ? `<div class="bg-white border border-slate-200 rounded-2xl p-4 space-y-3"><div class="flex items-center justify-between"><h3 class="text-xs font-black uppercase text-slate-900">Pending Caregiver Requests</h3><button onclick="closeIncomingRequests()" class="text-xs font-bold text-slate-500">Close</button></div>${window.state.incomingRequests.length ? window.state.incomingRequests.map(function (request) {
                 const time = new Date(request.timestamp).toLocaleString();
                 return '<div class="bg-slate-50 border border-slate-200 rounded-xl p-3"><p class="text-xs font-bold text-slate-900">' + escapeGuardianHtml(request.guardianName) + '</p><p class="text-[11px] text-slate-500">' + escapeGuardianHtml(request.guardianCode) + ' • ' + escapeGuardianHtml(time) + '</p><p class="text-[10px] text-amber-700 mt-1">Locked — no patient data shared</p><div class="grid grid-cols-2 gap-2 mt-3"><button onclick="acceptGuardianRequest(this.dataset.id)" data-id="' + escapeGuardianHtml(request.id) + '" class="bg-teal-600 text-white text-xs font-bold py-2 rounded-lg">✓ Accept</button><button onclick="declineGuardianRequest(this.dataset.id)" data-id="' + escapeGuardianHtml(request.id) + '" class="bg-rose-50 text-rose-700 text-xs font-bold py-2 rounded-lg">✕ Decline</button></div></div>';

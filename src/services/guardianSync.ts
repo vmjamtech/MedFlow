@@ -8,7 +8,10 @@ import type { Dose, GuardianAlert, Medication, MonitoredPatient } from '../db/sc
 
 const supabaseUrl = import.meta.env.VITE_SUPABASE_URL || '';
 const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY || '';
-const supabase = supabaseUrl && supabaseAnonKey ? createClient(supabaseUrl, supabaseAnonKey) : null;
+export const medflowSupabase = supabaseUrl && supabaseAnonKey
+  ? createClient(supabaseUrl, supabaseAnonKey)
+  : null;
+const supabase = medflowSupabase;
 const PATIENT_CODE_KEY = 'medflow_patient_code';
 const CODE_ALPHABET = 'ABCDEFGHJKLMNPQRSTUVWXYZ23456789';
 
@@ -116,6 +119,7 @@ export class GuardianSyncService {
   }
 
   static async savePatientName(displayName: string): Promise<boolean> {
+    if (!this.syncEnabled || !supabase || !navigator.onLine) return false;
     const profile = await this.requireProfile();
     if (!profile) return false;
     const normalizedName = displayName.trim().slice(0, 80);

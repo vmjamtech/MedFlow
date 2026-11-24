@@ -7,6 +7,20 @@ import { CapacitorSQLite, SQLiteDBConnection, SQLiteConnection } from '@capacito
 import { Capacitor } from '@capacitor/core';
 import type { Medication, Dose, VitalLog, IntakeHistory } from './schema';
 
+export interface LocalProfile {
+  name: string;
+  age: number | null;
+  sex: 'Prefer not to say' | 'Male' | 'Female' | 'Other';
+  photo: string;
+}
+
+export const EMPTY_LOCAL_PROFILE: LocalProfile = {
+  name: '',
+  age: null,
+  sex: 'Prefer not to say',
+  photo: '',
+};
+
 export class MedFlowDatabase {
   private db: SQLiteDBConnection | null = null;
   private dbName = 'medflow.db';
@@ -110,6 +124,15 @@ export class MedFlowDatabase {
         createdAt TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS local_profile (
+        id INTEGER PRIMARY KEY CHECK (id = 1),
+        name TEXT NOT NULL DEFAULT '',
+        age INTEGER,
+        sex TEXT NOT NULL DEFAULT 'Prefer not to say',
+        photo TEXT NOT NULL DEFAULT '',
+        updatedAt TEXT
+      );
+
       CREATE INDEX IF NOT EXISTS idx_doses_scheduled ON doses(scheduledMinutes);
       CREATE INDEX IF NOT EXISTS idx_vitals_date ON vital_logs(date);
       CREATE INDEX IF NOT EXISTS idx_vitals_type ON vital_logs(type);
@@ -130,6 +153,77 @@ export class MedFlowDatabase {
       localStorage.setItem('medflow_vitalLogs', JSON.stringify([]));
       localStorage.setItem('medflow_intakeHistory', JSON.stringify([]));
     }
+    if (!localStorage.getItem('medflow_local_profile')) {
+      localStorage.setItem('medflow_local_profile', JSON.stringify(EMPTY_LOCAL_PROFILE));
+    }
+  }
+
+  // ======================= LOCAL PROFILE =======================
+  async getLocalProfile(): Promise<LocalProfile> {
+    if (this.db) {
+      const result = await this.db.query(
+        'SELECT name, age, sex, photo FROM local_profile WHERE id = 1'
+      );
+      const row = result.values?.[0];
+      if (row) {
+        return {
+          name: String(row.name || ''),
+          age: typeof row.age === 'number' ? row.age : null,
+          sex: this.isProfileSex(row.sex) ? row.sex : 'Prefer not to say',
+          photo: String(row.photo || ''),
+        };
+      }
+      return { ...EMPTY_LOCAL_PROFILE };
+    }
+
+    try {
+      const stored = JSON.parse(
+        localStorage.getItem('medflow_local_profile') || '{}'
+      ) as Partial<LocalProfile>;
+      return {
+        name: typeof stored.name === 'string' ? stored.name : '',
+        age: typeof stored.age === 'number' ? stored.age : null,
+        sex: this.isProfileSex(stored.sex) ? stored.sex : 'Prefer not to say',
+        photo: typeof stored.photo === 'string' ? stored.photo : '',
+      };
+    } catch (error) {
+      console.warn('Unable to read local profile; using an empty profile', error);
+      return { ...EMPTY_LOCAL_PROFILE };
+    }
+  }
+
+  async saveLocalProfile(profile: LocalProfile): Promise<void> {
+    const normalized: LocalProfile = {
+      name: profile.name.trim().slice(0, 80),
+      age: profile.age,
+      sex: this.isProfileSex(profile.sex) ? profile.sex : 'Prefer not to say',
+      photo: profile.photo,
+    };
+
+    if (this.db) {
+      await this.db.run(
+        `INSERT OR REPLACE INTO local_profile
+         (id, name, age, sex, photo, updatedAt)
+         VALUES (1, ?, ?, ?, ?, ?)`,
+        [
+          normalized.name,
+          normalized.age,
+          normalized.sex,
+          normalized.photo,
+          new Date().toISOString(),
+        ]
+      );
+      return;
+    }
+
+    localStorage.setItem('medflow_local_profile', JSON.stringify(normalized));
+  }
+
+  private isProfileSex(value: unknown): value is LocalProfile['sex'] {
+    return value === 'Prefer not to say' ||
+      value === 'Male' ||
+      value === 'Female' ||
+      value === 'Other';
   }
 
   // ======================= MEDICATIONS =======================
@@ -315,6 +409,56 @@ export class MedFlowDatabase {
   }
 
   // ======================= UTILITY =======================
+  async clearDemoData(): Promise<void> {
+    const medicationIds = ['med-amox', 'med-met', 'med-ibu'];
+    const doseIds = ['dose-1', 'dose-2', 'dose-3', 'dose-4'];
+    const vitalIds = ['v-1', 'v-2', 'v-3', 'v-4', 'v-5', 'v-6', 'v-7'];
+    const historyIds = ['ih-1', 'ih-2', 'ih-3', 'ih-4', 'ih-5', 'ih-6', 'ih-7'];
+    const medicationParams = medicationIds.map(() => '?').join(', ');
+    const doseParams = doseIds.map(() => '?').join(', ');
+    const vitalParams = vitalIds.map(() => '?').join(', ');
+    const historyParams = historyIds.map(() => '?').join(', ');
+
+    if (this.db) {
+      await this.db.run(
+        `DELETE FROM intake_history WHERE id IN (${historyParams}) OR medId IN (${medicationParams})`,
+        [...historyIds, ...medicationIds]
+      );
+      await this.db.run(
+        `DELETE FROM doses WHERE id IN (${doseParams}) OR medId IN (${medicationParams})`,
+        [...doseIds, ...medicationIds]
+      );
+      await this.db.run(`DELETE FROM vital_logs WHERE id IN (${vitalParams})`, vitalIds);
+      await this.db.run(`DELETE FROM medications WHERE id IN (${medicationParams})`, medicationIds);
+      return;
+    }
+
+    const medications = JSON.parse(localStorage.getItem('medflow_medications') || '[]') as Medication[];
+    const doses = JSON.parse(localStorage.getItem('medflow_doses') || '[]') as Dose[];
+    const vitals = JSON.parse(localStorage.getItem('medflow_vitalLogs') || '[]') as VitalLog[];
+    const history = JSON.parse(localStorage.getItem('medflow_intakeHistory') || '[]') as IntakeHistory[];
+    localStorage.setItem(
+      'medflow_medications',
+      JSON.stringify(medications.filter((item) => !medicationIds.includes(item.id)))
+    );
+    localStorage.setItem(
+      'medflow_doses',
+      JSON.stringify(doses.filter((item) =>
+        !doseIds.includes(item.id) && !medicationIds.includes(item.medId)
+      ))
+    );
+    localStorage.setItem(
+      'medflow_vitalLogs',
+      JSON.stringify(vitals.filter((item) => !vitalIds.includes(item.id)))
+    );
+    localStorage.setItem(
+      'medflow_intakeHistory',
+      JSON.stringify(history.filter((item) =>
+        !historyIds.includes(item.id) && !medicationIds.includes(item.medId)
+      ))
+    );
+  }
+
   async clearAllData(): Promise<void> {
     if (this.db) {
       await this.db.run('DELETE FROM intake_history');

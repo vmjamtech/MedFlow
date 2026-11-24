@@ -1,6 +1,6 @@
 {
     "name": "medflow",
-    "version": "0.1.0",
+    "version": "1.0.0",
     "description": "Offline-first Android mobile app for medication & vitals tracking with Guardian Mode sync",
     "type": "module",
     "scripts": {

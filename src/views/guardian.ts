@@ -12,6 +12,7 @@ interface GuardianWindowState {
   monitoredPatients?: MonitoredPatient[];
   guardianAlerts?: import('../db/schema').GuardianAlert[];
   escalateMissedMeds: boolean;
+  demoModeEnabled: boolean;
 }
 
 const escapeHtml = (value: unknown): string =>
@@ -48,7 +49,7 @@ export function renderGuardianTab(): HTMLElement {
         <span>🔔 Incoming Requests</span>
         <span class="bg-rose-600 text-white rounded-full px-2 py-0.5">${incoming.length}</span>
       </button>
-      ${import.meta.env.DEV ? '<button onclick="simulateIncomingRequest()" class="w-full bg-slate-100 text-slate-700 text-xs font-bold py-2.5 rounded-xl">Simulate Incoming Request</button>' : ''}
+      ${state.demoModeEnabled ? '<button onclick="simulateIncomingRequest()" class="w-full bg-slate-100 text-slate-700 text-xs font-bold py-2.5 rounded-xl">Simulate Incoming Request</button>' : ''}
       ${state.incomingRequestsOpen ? `
         <section class="bg-white border border-slate-200 rounded-2xl p-4 space-y-3">
           <div class="flex items-center justify-between">

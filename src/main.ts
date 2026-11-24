@@ -5,20 +5,25 @@
  */
 
 import './index.css';
-import { Capacitor } from '@capacitor/core';
-import { db } from './db/database';
+import { db, EMPTY_LOCAL_PROFILE } from './db/database';
+import type { LocalProfile } from './db/database';
 import type { Medication, Dose, VitalLog, IntakeHistory } from './db/schema';
 import { SchedulerService } from './services/scheduler';
 import { GuardianSyncService } from './services/guardianSync';
 import { getVitalStatus } from './utils/clinical';
 import { renderPillSVG, getPillBgClass } from './utils/pillSvg';
-
-// Auto-init when DOM is ready
-if (document.readyState === 'loading') {
-  document.addEventListener('DOMContentLoaded', initializeApp);
-} else {
-  initializeApp();
-}
+import { openProfileModal as renderProfileModal } from './modals/profileModal';
+import {
+  areTermsAccepted,
+  showTermsAcceptanceGate,
+  showTermsReview,
+} from './modals/termsModal';
+import {
+  AppUpdaterService,
+  CURRENT_APP_VERSION,
+  isNewerVersion,
+} from './services/appUpdater';
+import type { AppRelease } from './services/appUpdater';
 
 // ==========================================
 // STATE & INITIALIZATION
@@ -43,6 +48,9 @@ interface AppState {
   reportDateTo: string;
   showMorningBanner: boolean;
   escalateMissedMeds: boolean;
+  profile: LocalProfile;
+  demoModeEnabled: boolean;
+  latestRelease: AppRelease | null;
 }
 
 let state: AppState = {
@@ -64,6 +72,9 @@ let state: AppState = {
   reportDateTo: '',
   showMorningBanner: true,
   escalateMissedMeds: localStorage.getItem('medflow_escalate_missed_meds') !== 'false',
+  profile: { ...EMPTY_LOCAL_PROFILE },
+  demoModeEnabled: false,
+  latestRelease: null,
 };
 
 let prnTimerInterval: NodeJS.Timeout | null = null;
@@ -102,7 +113,11 @@ async function initializeGuardianSyncState() {
     const profile = GuardianSyncService.getProfile();
     if (profile) {
       state.myPatientCode = profile.patient_code;
-      state.myPatientName = profile.display_name || localStorage.getItem('medflow_myPatientName') || '';
+      if (!state.profile.name && profile.display_name) {
+        state.profile = { ...state.profile, name: profile.display_name };
+        await db.saveLocalProfile(state.profile);
+      }
+      state.myPatientName = state.profile.name;
       state.escalateMissedMeds = profile.sync_enabled;
       localStorage.setItem('medflow_escalate_missed_meds', String(profile.sync_enabled));
       localStorage.setItem('medflow_patient_code', profile.patient_code);
@@ -160,6 +175,19 @@ async function refreshGuardianSyncState() {
     ...patient,
     nickname: nicknames[patient.id] || undefined,
   }));
+  monitoredPatients = mergedMonitored.map((patient) => ({
+    id: patient.id,
+    patientName: patient.name,
+    guardianId: patient.relation,
+    code: patient.code,
+    adherence: patient.adherence,
+    lastSync: patient.lastSync === 'Synced' ? 'Just now' : patient.lastSync,
+    status: patient.status,
+    meds: patient.meds,
+  }));
+  patientCodeLookup = Object.fromEntries(
+    monitoredPatients.map((patient) => [patient.code, patient])
+  );
   guardianAlerts = alerts;
   (state as any).guardianAlerts = alerts;
   (window as any).secureMonitoredPatients = mergedMonitored.map((patient) => ({
@@ -225,8 +253,8 @@ function createShell() {
   const now = new Date();
   const timeStr = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
   const dayStr = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
-  const demoControls = import.meta.env.DEV ? `
-    <div class="w-full max-w-md mb-2 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm">
+  const demoControls = `
+    <div id="demo-controls" class="${state.demoModeEnabled ? '' : 'hidden'} w-full max-w-md mb-2 flex items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white/95 px-3 py-2 shadow-sm">
       <div class="min-w-0">
         <p class="text-[10px] font-black uppercase tracking-wider text-teal-700">Interactive Demo Controls</p>
         <p class="text-[9px] text-slate-500">Development only</p>
@@ -234,12 +262,12 @@ function createShell() {
       <button onclick="triggerLockScreenNotification('MedFlow missed-dose alert', 'Medication is overdue by at least one hour')" class="shrink-0 rounded-xl bg-teal-600 px-3 py-2 text-[10px] font-bold text-white shadow-sm">🔔 Test Missed Alert</button>
       <button onclick="resetDemoData()" class="shrink-0 rounded-xl bg-slate-100 px-3 py-2 text-[10px] font-bold text-slate-700">Reset Data</button>
     </div>
-  ` : '';
+  `;
 
   app.innerHTML = `
     <div class="min-h-screen bg-gradient-to-br from-slate-50 to-slate-100 flex flex-col items-center justify-start p-2">
     ${demoControls}
-    <div class="${import.meta.env.DEV ? 'h-[calc(100dvh-4.25rem)]' : 'h-[100dvh]'} w-full max-w-md mx-auto flex flex-col overflow-hidden bg-slate-50 relative shadow-xl rounded-none md:rounded-3xl">
+    <div id="app-shell" class="w-full max-w-md mx-auto flex flex-col overflow-hidden bg-slate-50 relative shadow-xl rounded-none md:rounded-3xl" style="height: ${state.demoModeEnabled ? 'calc(100dvh - 4.25rem)' : '100dvh'};">
         
         <!-- Header with Time & Date (Pinned Top, Safe-Area Aware) -->
         <header class="shrink-0 bg-white border-b border-slate-200/60 shadow-sm" style="padding-top: max(0.75rem, env(safe-area-inset-top));">
@@ -250,13 +278,22 @@ function createShell() {
                 <span class="text-xs font-semibold text-slate-500">•</span>
                 <span class="text-xs font-semibold text-slate-600">${dayStr}</span>
               </div>
-              <h1 id="header-title" class="text-lg font-black text-slate-900 tracking-tight">Today's Regimen</h1>
+              <div class="flex items-center gap-2">
+                <h1 id="header-title" class="text-lg font-black text-slate-900 tracking-tight">Today's Regimen</h1>
+                <span id="adherence-pill" class="inline-flex shrink-0 items-center gap-1 bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-1.5 rounded-full border border-emerald-300">
+                  <span class="text-green-600">✓</span>
+                  <span id="adherence-count">0/0</span>
+                </span>
+              </div>
             </div>
             <div class="text-right flex-shrink-0">
-              <span id="adherence-pill" class="inline-flex items-center gap-1 bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-1.5 rounded-full border border-emerald-300">
-                <span class="text-green-600">✓</span>
-                <span id="adherence-count">0/0</span>
-              </span>
+              <button id="profile-pill" type="button" onclick="openProfileModal()" class="relative flex max-w-[170px] items-center gap-2 rounded-full border border-slate-200 bg-slate-50 py-1 pl-1 pr-3 text-left shadow-sm transition hover:border-teal-300 active:scale-[0.98]">
+                <span id="profile-pill-avatar" class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-100 text-[11px] font-black text-teal-700">
+                  <svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"/></svg>
+                </span>
+                <span id="profile-update-badge" class="hidden absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-white bg-rose-500 shadow-sm" aria-label="App update available"></span>
+                <span id="profile-pill-name" class="truncate text-xs font-bold text-slate-800">Set Profile</span>
+              </button>
             </div>
           </div>
         </header>
@@ -268,9 +305,11 @@ function createShell() {
         </main>
 
         <!-- Floating Add Button (Safe-Area Offset) -->
-        <button onclick="openAddMedModal()" class="fixed z-25 bg-teal-500 hover:bg-teal-600 active:bg-teal-700 text-white rounded-full shadow-lg shadow-teal-500/30 flex items-center justify-center text-3xl active:scale-90 transition duration-200 font-bold border-0" style="bottom: calc(5rem + max(0.5rem, env(safe-area-inset-bottom))); right: 1.25rem; width: 4rem; height: 4rem;" title="Add Medication">
-          +
-        </button>
+        <div class="fixed bottom-20 left-1/2 z-40 flex w-full max-w-[28rem] -translate-x-1/2 pointer-events-none" style="padding-bottom: max(0.5rem, env(safe-area-inset-bottom));">
+          <button id="fab-add-btn" onclick="openAddMedModal()" class="ml-auto mr-5 pointer-events-auto bg-teal-500 hover:bg-teal-600 active:bg-teal-700 text-white rounded-full shadow-lg shadow-teal-500/30 flex items-center justify-center text-3xl active:scale-90 transition duration-200 font-bold border-0" style="width: 4rem; height: 4rem;" title="Add Medication">
+            +
+          </button>
+        </div>
 
         <!-- Toast Container -->
         <div id="toast-container" class="fixed bottom-32 left-0 right-0 flex flex-col gap-2 items-center pointer-events-none z-40 px-4 max-w-md mx-auto left-1/2 transform -translate-x-1/2"></div>
@@ -318,11 +357,11 @@ function createShell() {
   console.log('✓ Shell created with refined mobile layout');
 }
 
-async function initializeApp() {
+async function initApp() {
   try {
     // Ensure DOM is ready before creating shell
     if (!document.getElementById('app')) {
-      setTimeout(() => initializeApp(), 100);
+      setTimeout(() => void initApp(), 100);
       return;
     }
 
@@ -331,72 +370,62 @@ async function initializeApp() {
     await db.init();
     console.log('✓ Database initialized');
 
-    const existing = await db.getMedications();
-    if (existing.length === 0) {
-      await seedSampleData();
-      console.log('✓ Sample data seeded');
+    if (!state.demoModeEnabled) {
+      await clearDemoData();
     }
 
     state.medications = await db.getMedications();
     state.doses = await db.getDoses();
     state.vitalLogs = await db.getVitalLogs();
     state.intakeHistory = await db.getIntakeHistory(100);
+    state.profile = await db.getLocalProfile();
+    state.myPatientName = state.profile.name;
     await reconcileMissingMedicationSchedules();
     await initializeGuardianSyncState();
+    await checkForAppUpdate();
     startGuardianEvaluationInterval();
-
-    monitoredPatients = [
-      {
-        id: 'pat-mom',
-        patientName: 'Elena R.',
-        guardianId: 'Mother',
-        code: 'MED-3104',
-        adherence: 96,
-        lastSync: '2 mins ago',
-        status: 'on_track',
-        meds: [
-          { name: 'Losartan 50mg', qty: '1 tablet', time: '08:00 AM', status: 'taken' },
-          { name: 'Atorvastatin 20mg', qty: '1 tablet', time: '08:00 PM', status: 'upcoming' }
-        ]
-      },
-      {
-        id: 'pat-dad',
-        patientName: 'Roberto R.',
-        guardianId: 'Father',
-        code: 'MED-9921',
-        adherence: 84,
-        lastSync: 'Just now',
-        status: 'overdue',
-        meds: [
-          { name: 'Insulin Glargine', qty: '12 units', time: '07:00 AM', status: 'missed_1h' },
-          { name: 'Metformin 500mg', qty: '1 tablet', time: '12:30 PM', status: 'upcoming' }
-        ]
-      }
-    ];
-
-    // Create lookup map for patient codes
-    patientCodeLookup = {};
-    for (const patient of monitoredPatients) {
-      patientCodeLookup[patient.code] = patient;
-    }
-    guardianAlerts = [
-      {
-        id: 'galert-1',
-        patientName: 'Dad (Roberto R.)',
-        medName: 'Insulin Glargine',
-        medStrength: '12 units',
-        doseQty: 12,
-        unit: 'units',
-        scheduledTime: '07:00 AM',
-        overdueBy: '11h 05m past window',
-        acknowledged: false
-      }
-    ];
-
     console.log('✓ App initialized');
     renderApp();
   } catch (error) {
     console.error('❌ Init failed:', error);
+  }
+}
+
+function runSplashStatusCycle(): () => void {
+  const status = document.getElementById('medflow-splash-status');
+  if (!status) return () => undefined;
+  const startedAt = performance.now();
+  const updateStatus = () => {
+    const elapsed = performance.now() - startedAt;
+    status.textContent = elapsed < 1000
+      ? 'Initializing encrypted local vault...'
+      : elapsed < 2000
+      ? 'Syncing Guardian status & schedules...'
+      : 'Checking app version & alerts...';
+  };
+  updateStatus();
+  const interval = window.setInterval(updateStatus, 100);
+  return () => window.clearInterval(interval);
+}
+
+async function bootApp() {
+  const stopStatusCycle = runSplashStatusCycle();
+  const minimumSplashTime = new Promise<void>((resolve) => {
+    window.setTimeout(resolve, 3000);
+  });
+
+  try {
+    await Promise.all([minimumSplashTime, initApp()]);
+  } finally {
+    stopStatusCycle();
+    const splash = document.getElementById('app-splash-screen');
+    splash?.classList.add('is-leaving');
+    await new Promise<void>((resolve) => window.setTimeout(resolve, 500));
+    splash?.remove();
+
+    if (!areTermsAccepted()) {
+      await showTermsAcceptanceGate();
+    }
   }
 }
 
@@ -473,10 +502,21 @@ async function refreshAllGuardianData() {
   ]);
   state.medications = medications;
   state.doses = doses;
+  await checkForAppUpdate();
   await syncCurrentGuardianDoseFeed();
   await syncOverdueGuardianAlerts();
   await refreshGuardianSyncState();
   renderApp();
+}
+
+async function checkForAppUpdate() {
+  if (!navigator.onLine || !AppUpdaterService.isConfigured()) return;
+  try {
+    state.latestRelease = await AppUpdaterService.fetchLatestRelease();
+    updateHeader();
+  } catch (error) {
+    console.warn('Unable to check for app updates', error);
+  }
 }
 
 async function toggleEscalateMissedMeds() {
@@ -496,7 +536,9 @@ async function toggleEscalateMissedMeds() {
   renderApp();
 }
 
-async function seedSampleData() {
+async function loadSampleDemoData() {
+  if (!state.demoModeEnabled) return;
+
   const medications: Medication[] = [
     {
       id: 'med-amox',
@@ -589,10 +631,83 @@ async function seedSampleData() {
     { id: 'ih-7', medId: 'med-ibu', medName: 'Ibuprofen', strength: '400mg', doseQty: 1, unit: 'tablet', takenAt: 'Nov 16, 02:30 PM', date: '2026-11-16', timingStatus: 'PRN', scheduleType: 'prn' },
   ];
 
-  for (const med of medications) await db.saveMedication(med);
-  for (const dose of doses) await db.saveDose(dose);
-  for (const vital of vitalLogs) await db.saveVitalLog(vital);
-  for (const history of intakeHistory) await db.saveIntakeHistory(history);
+  const [savedMedications, savedDoses, savedVitals, savedHistory] = await Promise.all([
+    db.getMedications(),
+    db.getDoses(),
+    db.getVitalLogs(),
+    db.getIntakeHistory(500),
+  ]);
+  const medicationIds = new Set(savedMedications.map((item) => item.id));
+  const doseIds = new Set(savedDoses.map((item) => item.id));
+  const vitalIds = new Set(savedVitals.map((item) => item.id));
+  const historyIds = new Set(savedHistory.map((item) => item.id));
+
+  for (const med of medications) {
+    if (!medicationIds.has(med.id)) await db.saveMedication(med);
+  }
+  for (const dose of doses) {
+    if (!doseIds.has(dose.id)) await db.saveDose(dose);
+  }
+  for (const vital of vitalLogs) {
+    if (!vitalIds.has(vital.id)) await db.saveVitalLog(vital);
+  }
+  for (const history of intakeHistory) {
+    if (!historyIds.has(history.id)) await db.saveIntakeHistory(history);
+  }
+
+  state.medications = await db.getMedications();
+  state.doses = await db.getDoses();
+  state.vitalLogs = await db.getVitalLogs();
+  state.intakeHistory = await db.getIntakeHistory(100);
+
+  if (monitoredPatients.length === 0) {
+    monitoredPatients = [
+      {
+        id: 'pat-mom',
+        patientName: 'Elena R.',
+        guardianId: 'Mother',
+        code: 'MED-3104',
+        adherence: 96,
+        lastSync: '2 mins ago',
+        status: 'on_track',
+        meds: [
+          { name: 'Losartan 50mg', qty: '1 tablet', time: '08:00 AM', status: 'taken' },
+          { name: 'Atorvastatin 20mg', qty: '1 tablet', time: '08:00 PM', status: 'upcoming' }
+        ]
+      },
+      {
+        id: 'pat-dad',
+        patientName: 'Roberto R.',
+        guardianId: 'Father',
+        code: 'MED-9921',
+        adherence: 84,
+        lastSync: 'Just now',
+        status: 'overdue',
+        meds: [
+          { name: 'Insulin Glargine', qty: '12 units', time: '07:00 AM', status: 'missed_1h' },
+          { name: 'Metformin 500mg', qty: '1 tablet', time: '12:30 PM', status: 'upcoming' }
+        ]
+      }
+    ];
+    patientCodeLookup = Object.fromEntries(
+      monitoredPatients.map((patient) => [patient.code, patient])
+    );
+  }
+  if (guardianAlerts.length === 0) {
+    guardianAlerts = [{
+      id: 'galert-1',
+      patientName: 'Dad (Roberto R.)',
+      medName: 'Insulin Glargine',
+      medStrength: '12 units',
+      doseQty: 12,
+      unit: 'units',
+      scheduledTime: '07:00 AM',
+      overdueBy: '11h 05m past window',
+      acknowledged: false
+    }];
+  }
+  showToast('✓ Sample demo data loaded');
+  renderApp();
 }
 
 async function reconcileMissingMedicationSchedules() {
@@ -721,6 +836,7 @@ function showToast(message: string, type: 'success' | 'warning' | 'alert' = 'suc
 // ==========================================
 
 async function takeScheduledDose(doseId: string, simulatedLateMinutes?: number) {
+  if (simulatedLateMinutes !== undefined && !state.demoModeEnabled) return;
   const dose = state.doses.find(d => d.id === doseId);
   if (!dose || dose.status === 'taken') return;
 
@@ -855,6 +971,7 @@ async function takePrnDose(medId: string) {
 }
 
 async function skipPrnCooldown(medId: string) {
+  if (!state.demoModeEnabled) return;
   const med = state.medications.find(m => m.id === medId);
   if (med) {
     med.cooldownRemainingSeconds = 0;
@@ -1355,6 +1472,82 @@ function closeModal() {
   }
 }
 
+async function openProfileModal() {
+  await renderProfileModal({
+    profile: state.profile,
+    demoModeEnabled: state.demoModeEnabled,
+    onSave: async (profile) => {
+      const previousName = state.profile.name;
+      state.profile = profile;
+      state.myPatientName = profile.name;
+      if (
+        profile.name &&
+        profile.name !== previousName &&
+        state.guardianSyncEnabled &&
+        GuardianSyncService.isOnline()
+      ) {
+        const saved = await GuardianSyncService.savePatientName(profile.name);
+        if (!saved) showToast('Profile saved locally; cloud name sync failed', 'warning');
+      }
+      updateHeader();
+      renderApp();
+    },
+    onDemoModeChange: setDemoMode,
+    onLoadSampleData: loadSampleDemoData,
+    latestRelease: state.latestRelease,
+    onViewTerms: showTermsReview,
+    onToast: showToast,
+    onClose: closeModal,
+  });
+}
+
+function setDemoMode(enabled: boolean) {
+  state.demoModeEnabled = enabled;
+  const controls = document.getElementById('demo-controls');
+  const shell = document.getElementById('app-shell');
+  controls?.classList.toggle('hidden', !enabled);
+  if (shell) shell.style.height = enabled ? 'calc(100dvh - 4.25rem)' : '100dvh';
+  if (!enabled) void clearDemoData();
+  renderApp();
+}
+
+async function clearDemoData() {
+  await db.clearDemoData();
+  state.medications = await db.getMedications();
+  state.doses = await db.getDoses();
+  state.vitalLogs = await db.getVitalLogs();
+  state.intakeHistory = await db.getIntakeHistory(100);
+
+  const isDemoRequest = (request: any) =>
+    String(request?.id || '').startsWith('request-demo-');
+  const isDemoPatient = (patient: any) =>
+    ['pat-mom', 'pat-dad', 'pat-elena', 'pat-roberto'].includes(String(patient?.id || ''));
+  const isDemoAlert = (alert: any) =>
+    String(alert?.id || '') === 'galert-1' ||
+    String(alert?.id || '').startsWith('galert-');
+
+  (state as any).incomingRequests = (((state as any).incomingRequests || []) as any[])
+    .filter((request) => !isDemoRequest(request));
+  (state as any).approvedGuardians = (((state as any).approvedGuardians || []) as any[])
+    .filter((guardian) => !isDemoRequest(guardian));
+  (state as any).pendingLinkRequests = (((state as any).pendingLinkRequests || []) as any[])
+    .filter((request) => !isDemoRequest(request));
+  monitoredPatients = monitoredPatients.filter((patient) => !isDemoPatient(patient));
+  guardianAlerts = guardianAlerts.filter((alert) => !isDemoAlert(alert));
+  (state as any).guardianAlerts = guardianAlerts;
+
+  const securePatients = ((window as any).secureMonitoredPatients || []) as any[];
+  (window as any).secureMonitoredPatients = securePatients.filter((patient) => !isDemoPatient(patient));
+  patientCodeLookup = Object.fromEntries(
+    monitoredPatients.map((patient) => [patient.code, patient])
+  );
+  localStorage.removeItem('medflow_guardian_incoming');
+  localStorage.removeItem('medflow_guardian_approved');
+  localStorage.removeItem('medflow_guardian_pending');
+  localStorage.removeItem('medflow_guardian_monitored');
+  renderApp();
+}
+
 async function submitAddMedication(med: Medication, isEdit: boolean) {
   const existingDoses = state.doses.filter((dose) => dose.medId === med.id);
   const generatedDoses = await SchedulerService.calculateDayDoses(med);
@@ -1427,18 +1620,19 @@ function copyPatientCode() {
   }
 }
 
-function saveMyPatientName() {
+async function saveMyPatientName() {
   const nameInput = document.getElementById('my-patient-name-input') as HTMLInputElement;
   const name = nameInput?.value?.trim();
   if (!name) {
     showToast('Please enter your name', 'warning');
     return;
   }
+  state.profile = { ...state.profile, name: name.slice(0, 80) };
+  await db.saveLocalProfile(state.profile);
   state.myPatientName = name;
-  if (GuardianSyncService.isOnline()) {
-    void GuardianSyncService.savePatientName(name).then((saved) => {
-      if (!saved) showToast('Name saved locally; cloud sync failed', 'warning');
-    });
+  if (state.guardianSyncEnabled && GuardianSyncService.isOnline()) {
+    const saved = await GuardianSyncService.savePatientName(name);
+    if (!saved) showToast('Name saved locally; cloud sync failed', 'warning');
   }
   showToast(`✓ Saved: "${name}"`);
   renderApp();
@@ -1565,6 +1759,9 @@ function updateHeader() {
   const headerTitle = document.getElementById('header-title');
   const adherencePill = document.getElementById('adherence-pill');
   const adherenceCount = document.getElementById('adherence-count');
+  const profileName = document.getElementById('profile-pill-name');
+  const profileAvatar = document.getElementById('profile-pill-avatar');
+  const updateBadge = document.getElementById('profile-update-badge');
 
   const tabTitles: Record<string, string> = {
     today: 'Today\'s Regimen',
@@ -1575,6 +1772,26 @@ function updateHeader() {
   };
 
   if (headerTitle) headerTitle.textContent = tabTitles[state.currentTab] || 'Today\'s Regimen';
+  if (profileName) profileName.textContent = state.profile.name || 'Set Profile';
+  if (updateBadge) {
+    const updateAvailable = Boolean(
+      state.latestRelease &&
+      isNewerVersion(state.latestRelease.version, CURRENT_APP_VERSION)
+    );
+    updateBadge.classList.toggle('hidden', !updateAvailable);
+  }
+  if (profileAvatar) {
+    profileAvatar.replaceChildren();
+    if (state.profile.photo) {
+      const photo = document.createElement('img');
+      photo.src = state.profile.photo;
+      photo.alt = state.profile.name ? `${state.profile.name} profile photo` : 'Profile photo';
+      photo.className = 'h-9 w-9 rounded-full object-cover';
+      profileAvatar.appendChild(photo);
+    } else {
+      profileAvatar.innerHTML = '<svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"/></svg>';
+    }
+  }
   
   // Only show adherence pill on Today tab
   if (adherencePill) {
@@ -1718,7 +1935,7 @@ function renderTodayTab(): string {
               : `<button onclick="takeScheduledDose('${dose.id}')" class="flex-1 bg-teal-600 hover:bg-teal-700 active:bg-teal-800 text-white text-xs font-bold py-2.5 rounded-lg transition active:scale-95">
                    ✅ Take Now
                  </button>
-                 ${import.meta.env.DEV && med.scheduleType === 'interval' ? `<button onclick="takeScheduledDose('${dose.id}', 90)" class="bg-amber-400 hover:bg-amber-500 active:bg-amber-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg transition active:scale-95" title="Development-only simulation">
+                 ${state.demoModeEnabled && med.scheduleType === 'interval' ? `<button onclick="takeScheduledDose('${dose.id}', 90)" class="bg-amber-400 hover:bg-amber-500 active:bg-amber-600 text-white text-xs font-bold px-3 py-2.5 rounded-lg transition active:scale-95" title="Demo simulation">
                    Simulate +90m
                  </button>` : ''}
                  <button onclick="snoozeDose('${dose.id}')" class="bg-slate-200 hover:bg-slate-300 text-slate-700 text-xs font-bold px-3 py-2.5 rounded-lg transition active:scale-95" title="Snooze 15 minutes">
@@ -1786,9 +2003,9 @@ function renderTodayTab(): string {
                 <p class="text-[11px] font-bold uppercase tracking-wide mb-1">Safety Cooldown Active</p>
                 <p class="text-sm font-mono font-bold">${formatSeconds(med.cooldownRemainingSeconds || 0)}</p>
               </div>
-              <button onclick="skipPrnCooldown('${med.id}')" class="bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold px-3 py-2 rounded-lg transition active:scale-95 whitespace-nowrap ml-2">
+              ${state.demoModeEnabled ? `<button onclick="skipPrnCooldown('${med.id}')" class="bg-white hover:bg-slate-100 text-slate-800 text-xs font-bold px-3 py-2 rounded-lg transition active:scale-95 whitespace-nowrap ml-2">
                 Skip Timer
-              </button>
+              </button>` : ''}
             </div>
           ` : ''}
           
@@ -1807,12 +2024,14 @@ function renderTodayTab(): string {
     html += `</div></div>`;
   }
 
-  if (html === '') {
+  if (state.medications.length === 0 && state.doses.length === 0) {
     html = `
-      <div class="text-center py-16">
-        <p class="text-sm font-medium text-slate-600">No medications scheduled for today</p>
-        <button onclick="openAddMedModal()" class="mt-4 text-xs font-bold text-teal-600 hover:text-teal-700 bg-teal-50 hover:bg-teal-100 px-4 py-2 rounded-lg transition">+ Add Medication</button>
-      </div>
+      <section class="rounded-2xl border border-slate-200 bg-white px-5 py-12 text-center shadow-sm">
+        <div class="mx-auto mb-3 flex h-12 w-12 items-center justify-center rounded-full bg-teal-50 text-2xl">💊</div>
+        <p class="text-sm font-bold text-slate-800">No medications scheduled for today</p>
+        <p class="mt-1 text-xs text-slate-500">Add your first medication to build today's regimen.</p>
+        <button onclick="openAddMedModal()" class="mt-4 rounded-lg bg-teal-600 px-4 py-2.5 text-xs font-bold text-white">+ Add Medication</button>
+      </section>
     `;
   }
 
@@ -3178,7 +3397,7 @@ function dismissVitalsPrompt() {
 // ==========================================
 
 function triggerLockScreenNotification(title: string = 'MedFlow Reminder', message: string = 'Time to take your medication!') {
-  if (import.meta.env.DEV && GuardianSyncService.isOnline()) {
+  if (state.demoModeEnabled && GuardianSyncService.isOnline()) {
     const dose = state.doses.find((item) => item.status === 'pending');
     const med = dose ? state.medications.find((item) => item.id === dose.medId) : state.medications[0];
     if (med) {
@@ -3226,55 +3445,10 @@ function dismissPushBanner() {
 }
 
 async function resetDemoData() {
-  if (!import.meta.env.DEV) return;
-  if (!confirm('Reset all MedFlow browser demo medications, doses, vitals, intake history, and Guardian requests?')) {
-    return;
-  }
-
-  try {
-    if (!Capacitor.isNativePlatform()) {
-      [
-        'medflow_medications',
-        'medflow_doses',
-        'medflow_vitalLogs',
-        'medflow_intakeHistory',
-        'medflow_guardian_incoming',
-        'medflow_guardian_approved',
-        'medflow_guardian_pending',
-        'medflow_guardian_monitored',
-        'medflow_myPatientName',
-        'medflow_guardian_nicknames',
-        'medflow_guardian_nickname_prompted',
-      ].forEach((key) => localStorage.removeItem(key));
-    } else {
-      showToast('Demo reset is browser-only', 'warning');
-      return;
-    }
-
-    state.medications = [];
-    state.doses = [];
-    state.vitalLogs = [];
-    state.intakeHistory = [];
-    state.showMorningBanner = true;
-    
-    await seedSampleData();
-    
-    state.medications = await db.getMedications();
-    state.doses = await db.getDoses();
-    state.vitalLogs = await db.getVitalLogs();
-    state.intakeHistory = await db.getIntakeHistory(100);
-    (state as any).incomingRequests = [];
-    (state as any).approvedGuardians = [];
-    (state as any).pendingLinkRequests = [];
-    (state as any).incomingRequestsOpen = false;
-    await syncCurrentGuardianDoseFeed();
-    
-    showToast('✓ Demo data reset');
-    renderApp();
-  } catch (error) {
-    console.error('Reset failed:', error);
-    showToast('Reset failed', 'alert');
-  }
+  if (!state.demoModeEnabled) return;
+  await clearDemoData();
+  await loadSampleDemoData();
+  showToast('✓ Demo data reset');
 }
 
 // ==========================================
@@ -3283,6 +3457,7 @@ async function resetDemoData() {
 
 (window as any).switchTab = switchTab;
 (window as any).openAddMedModal = openAddMedModal;
+(window as any).openProfileModal = openProfileModal;
 (window as any).closeModal = closeModal;
 (window as any).openLogVitalModal = openLogVitalModal;
 (window as any).takeScheduledDose = takeScheduledDose;
@@ -3341,6 +3516,12 @@ async function resetDemoData() {
 (window as any).triggerLockScreenNotification = triggerLockScreenNotification;
 (window as any).dismissPushBanner = dismissPushBanner;
 (window as any).resetDemoData = resetDemoData;
+(window as any).loadSampleDemoData = loadSampleDemoData;
+(window as any).turnOffDemoMode = () => setDemoMode(false);
 (window as any).parse24hToMinutes = parse24hToMinutes;
 
-initializeApp();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', () => void bootApp());
+} else {
+  void bootApp();
+}
