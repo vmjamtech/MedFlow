@@ -5,6 +5,7 @@
 
 import type { Medication, Dose } from '../db/schema';
 import { db } from '../db/database';
+import { GuardianSyncService } from './guardianSync';
 
 export class SchedulerService {
   /**
@@ -107,6 +108,10 @@ export class SchedulerService {
     }
 
     await db.saveMedication(med);
+    await GuardianSyncService.syncPatientDoseFeedToSupabase(
+      await db.getMedications(),
+      await db.getDoses()
+    );
     return { med, shiftedDoses };
   }
 
@@ -117,6 +122,10 @@ export class SchedulerService {
     dose.scheduledMinutes += 15;
     dose.shiftNote = 'Snoozed +15 mins';
     await db.saveDose(dose);
+    await GuardianSyncService.syncPatientDoseFeedToSupabase(
+      await db.getMedications(),
+      await db.getDoses()
+    );
     return dose;
   }
 

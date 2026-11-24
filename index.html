@@ -433,8 +433,75 @@
         localStorage.setItem('medflow_guardian_monitored', JSON.stringify(window.secureMonitoredPatients));
       }
 
+      function getGuardianNicknames() {
+        try {
+          return JSON.parse(localStorage.getItem('medflow_guardian_nicknames') || '{}');
+        } catch {
+          return {};
+        }
+      }
+
+      function setGuardianNickname(linkId, nickname) {
+        const nicknames = getGuardianNicknames();
+        if (nickname) nicknames[linkId] = nickname.trim().slice(0, 40);
+        else delete nicknames[linkId];
+        localStorage.setItem('medflow_guardian_nicknames', JSON.stringify(nicknames));
+      }
+
+      function nicknamePatientName(patient) {
+        const nickname = getGuardianNicknames()[patient.id];
+        return nickname ? patient.patientName + ' (' + nickname + ')' : patient.patientName;
+      }
+
+      window.saveMonitoredPatientNickname = function (linkId) {
+        const input = document.getElementById('guardian-patient-nickname');
+        const nickname = String(input ? input.value : '').trim();
+        setGuardianNickname(linkId, nickname);
+        window.closeModal();
+        window.renderRestoredGuardian();
+        window.showToast && window.showToast(nickname ? '✓ Nickname saved' : '✓ Nickname removed');
+      };
+
+      window.promptPatientNickname = function (linkId, newlyApproved) {
+        const patient = window.secureMonitoredPatients.find(function (item) { return item.id === linkId; });
+        if (!patient) return;
+        const promptedKey = 'medflow_guardian_nickname_prompted';
+        const prompted = JSON.parse(localStorage.getItem(promptedKey) || '[]');
+        if (newlyApproved && prompted.includes(linkId)) return;
+        if (newlyApproved) {
+          prompted.push(linkId);
+          localStorage.setItem(promptedKey, JSON.stringify(prompted));
+        }
+
+        const backdrop = document.getElementById('modal-backdrop');
+        document.getElementById('modal-subtitle').textContent = 'Guardian Patient Label';
+        document.getElementById('modal-title').textContent = newlyApproved ? 'Patient approved your request' : 'Edit patient nickname';
+        document.getElementById('modal-body').innerHTML = `
+          <div class="space-y-4">
+            <p class="text-xs text-slate-600">${escapeGuardianHtml(patient.patientName)} (${escapeGuardianHtml(patient.patientCode)})</p>
+            ${newlyApproved ? '<p class="text-xs font-semibold text-slate-800">Would you like to add a nickname such as DAD, MOM, or HOME?</p>' : ''}
+            <div>
+              <label class="block text-xs font-bold text-slate-900 mb-1.5 uppercase tracking-wide">Nickname (optional)</label>
+              <input id="guardian-patient-nickname" maxlength="40" type="text" value="${escapeGuardianHtml(getGuardianNicknames()[linkId] || '')}" placeholder="E.g., DAD" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-xs font-semibold text-slate-900 placeholder-slate-400" />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="saveMonitoredPatientNickname('${escapeGuardianHtml(linkId)}')" class="bg-teal-600 text-white text-xs font-bold py-3 rounded-lg">${newlyApproved ? 'Yes, save' : 'Save nickname'}</button>
+              <button onclick="closeModal()" class="bg-slate-100 text-slate-700 text-xs font-bold py-3 rounded-lg">${newlyApproved ? 'No, continue' : 'Cancel'}</button>
+            </div>
+          </div>`;
+        backdrop?.classList.remove('hidden');
+      };
+
       function loadGuardianState() {
         try {
+          window.state.guardianOnline = window.GuardianSyncService?.isOnline() || false;
+          if (!window.state.guardianDemoMode) {
+            window.state.incomingRequests = window.state.incomingRequests || [];
+            window.state.approvedGuardians = window.state.approvedGuardians || [];
+            window.state.pendingLinkRequests = window.state.pendingLinkRequests || [];
+            window.secureMonitoredPatients = window.secureMonitoredPatients || [];
+            return;
+          }
           window.state.incomingRequests = JSON.parse(localStorage.getItem('medflow_guardian_incoming') || '[]');
           window.state.approvedGuardians = JSON.parse(localStorage.getItem('medflow_guardian_approved') || '[]');
           window.state.pendingLinkRequests = JSON.parse(localStorage.getItem('medflow_guardian_pending') || '[]');
@@ -449,7 +516,7 @@
       }
 
       function isValidPatientCode(code) {
-        return /^MED-[A-Z0-9]{4,12}$/i.test(String(code || '').trim());
+        return /^MED-[A-HJ-NP-Z2-9]{8}$/i.test(String(code || '').trim());
       }
 
       function escapeGuardianHtml(value) {
@@ -461,11 +528,11 @@
           .replaceAll("'", '&#039;');
       }
 
-      window.requestPatientAccess = function () {
+      window.requestPatientAccess = async function () {
         const input = document.getElementById('link-patient-code');
         const code = String(input ? input.value : '').trim().toUpperCase();
         if (!isValidPatientCode(code)) {
-          window.showToast && window.showToast('Enter a valid patient code (MED-XXXX)', 'warning');
+          window.showToast && window.showToast('Enter a valid MED-XXXXXXXX patient code', 'warning');
           return;
         }
         if (window.state.pendingLinkRequests.some(function (request) { return request.patientCode === code; })) {
@@ -474,6 +541,36 @@
         }
         if (window.secureMonitoredPatients.some(function (patient) { return patient.status === 'approved' && patient.patientCode === code; })) {
           window.showToast && window.showToast('Access to this patient is already approved', 'warning');
+          return;
+        }
+
+        if (window.state.guardianOnline && window.GuardianSyncService?.isOnline()) {
+          const result = await window.GuardianSyncService.requestPatientAccess(
+            code,
+            window.state.myPatientName || 'Caregiver'
+          );
+          if (!result.success) {
+            window.showToast(result.error || 'Unable to request patient access', 'warning');
+            return;
+          }
+          const pending = await window.GuardianSyncService.fetchPendingRequests();
+          window.state.pendingLinkRequests = pending.map(function (request) {
+            return {
+              id: request.id,
+              patientCode: request.patient_code,
+              patientName: result.patientName,
+              guardianCode: request.guardian_code,
+              guardianName: request.guardian_name,
+              status: request.status,
+              timestamp: request.created_at || new Date().toISOString()
+            };
+          });
+          window.renderRestoredGuardian();
+          window.showToast && window.showToast('⏳ Request sent — patient approval is required');
+          return;
+        }
+        if (!window.state.guardianDemoMode) {
+          window.showToast && window.showToast('Guardian sync is unavailable. Reconnect and try again.', 'warning');
           return;
         }
 
@@ -508,7 +605,7 @@
         window.renderRestoredGuardian();
       };
 
-      window.saveMyPatientName = function () {
+      window.saveMyPatientName = async function () {
         const input = document.getElementById('my-patient-name-input');
         const name = String(input ? input.value : '').trim().slice(0, 80);
         if (!name) {
@@ -517,10 +614,31 @@
         }
         window.state.myPatientName = name;
         localStorage.setItem('medflow_myPatientName', name);
+        if (window.state.guardianOnline && window.GuardianSyncService?.isOnline()) {
+          const saved = await window.GuardianSyncService.savePatientName(name);
+          if (!saved) {
+            window.showToast && window.showToast('Name saved locally; cloud sync failed', 'warning');
+            return;
+          }
+        }
         window.showToast && window.showToast('✓ Patient name saved');
       };
 
-      window.openIncomingRequests = function () {
+      window.openIncomingRequests = async function () {
+        if (window.state.guardianOnline && window.GuardianSyncService?.isOnline()) {
+          const incoming = await window.GuardianSyncService.fetchIncomingRequests();
+          window.state.incomingRequests = incoming.map(function (request) {
+            return {
+              id: request.id,
+              patientCode: request.patient_code,
+              patientName: window.state.myPatientName || 'This patient',
+              guardianCode: request.guardian_code,
+              guardianName: request.guardian_name,
+              status: request.status,
+              timestamp: request.created_at || new Date().toISOString()
+            };
+          });
+        }
         window.state.incomingRequestsOpen = true;
         window.renderRestoredGuardian();
       };
@@ -530,7 +648,29 @@
         window.renderRestoredGuardian();
       };
 
-      window.acceptGuardianRequest = function (requestId) {
+      window.acceptGuardianRequest = async function (requestId) {
+        if (window.state.guardianOnline && window.GuardianSyncService?.isOnline()) {
+          if (!await window.GuardianSyncService.acceptRequest(requestId)) {
+            window.showToast && window.showToast('Unable to approve request', 'alert');
+            return;
+          }
+          await window.openIncomingRequests();
+          const approved = await window.GuardianSyncService.fetchApprovedGuardians();
+          window.state.approvedGuardians = approved.map(function (request) {
+            return {
+              id: request.id,
+              patientCode: request.patient_code,
+              patientName: window.state.myPatientName,
+              guardianCode: request.guardian_code,
+              guardianName: request.guardian_name,
+              status: request.status,
+              timestamp: request.created_at || new Date().toISOString()
+            };
+          });
+          window.showToast && window.showToast('✓ Guardian access approved');
+          window.renderRestoredGuardian();
+          return;
+        }
         const requestIndex = window.state.incomingRequests.findIndex(function (request) { return request.id === requestId; });
         if (requestIndex < 0) return;
         const request = window.state.incomingRequests.splice(requestIndex, 1)[0];
@@ -555,7 +695,16 @@
         window.renderRestoredGuardian();
       };
 
-      window.declineGuardianRequest = function (requestId) {
+      window.declineGuardianRequest = async function (requestId) {
+        if (window.state.guardianOnline && window.GuardianSyncService?.isOnline()) {
+          if (!await window.GuardianSyncService.declineRequest(requestId)) {
+            window.showToast && window.showToast('Unable to decline request', 'alert');
+            return;
+          }
+          await window.openIncomingRequests();
+          window.showToast && window.showToast('Request declined — no data shared');
+          return;
+        }
         window.state.incomingRequests = window.state.incomingRequests.filter(function (request) { return request.id !== requestId; });
         window.state.pendingLinkRequests = window.state.pendingLinkRequests.filter(function (request) { return request.id !== requestId; });
         persistGuardianState();
@@ -564,10 +713,37 @@
       };
 
       window.cancelPendingRequest = function (requestId) {
+        if (window.state.guardianOnline && window.GuardianSyncService?.isOnline()) {
+          window.GuardianSyncService.revokeLink(requestId).then(function (removed) {
+            if (!removed) {
+              window.showToast && window.showToast('Unable to cancel request', 'alert');
+              return;
+            }
+            window.state.pendingLinkRequests = window.state.pendingLinkRequests.filter(function (request) { return request.id !== requestId; });
+            window.renderRestoredGuardian();
+            window.showToast && window.showToast('✓ Request cancelled');
+          });
+          return;
+        }
         window.declineGuardianRequest(requestId);
       };
 
-      window.removeGuardian = function (requestId) {
+      window.removeGuardian = async function (requestId) {
+        if (!window.__confirmedRemovalIds?.has('guardian:' + requestId)) {
+          window.requestRemoveGuardian(requestId);
+          return;
+        }
+        window.__confirmedRemovalIds.delete('guardian:' + requestId);
+        if (window.state.guardianOnline && window.GuardianSyncService?.isOnline()) {
+          if (!await window.GuardianSyncService.revokeLink(requestId)) {
+            window.showToast && window.showToast('Unable to revoke access', 'alert');
+            return;
+          }
+          window.state.approvedGuardians = window.state.approvedGuardians.filter(function (guardian) { return guardian.id !== requestId; });
+          window.showToast && window.showToast('✓ Guardian access revoked');
+          window.renderRestoredGuardian();
+          return;
+        }
         const removed = window.state.approvedGuardians.find(function (guardian) { return guardian.id === requestId; });
         window.state.approvedGuardians = window.state.approvedGuardians.filter(function (guardian) { return guardian.id !== requestId; });
         window.secureMonitoredPatients = window.secureMonitoredPatients.filter(function (patient) { return !removed || patient.patientCode !== removed.patientCode; });
@@ -576,15 +752,98 @@
         window.renderRestoredGuardian();
       };
 
-      window.removeMonitoredPatient = function (patientId) {
+      window.requestRemoveGuardian = function (requestId) {
+        const guardian = window.state.approvedGuardians.find(function (item) { return item.id === requestId; });
+        if (!guardian) return;
+        const backdrop = document.getElementById('modal-backdrop');
+        document.getElementById('modal-subtitle').textContent = 'Confirm Access Removal';
+        document.getElementById('modal-title').textContent = 'Remove approved guardian';
+        document.getElementById('modal-body').innerHTML = `
+          <div class="space-y-4">
+            <p class="text-xs text-slate-600">This revokes access for ${escapeGuardianHtml(guardian.guardianName)} (${escapeGuardianHtml(guardian.guardianCode)}).</p>
+            <div>
+              <label class="block text-xs font-bold text-slate-900 mb-1.5 uppercase tracking-wide">Type confirm to proceed</label>
+              <input id="guardian-remove-confirm" type="text" autocomplete="off" placeholder="confirm" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-xs font-semibold" />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="confirmGuardianRemoval('${escapeGuardianHtml(requestId)}')" class="bg-rose-600 text-white text-xs font-bold py-3 rounded-lg">Remove Access</button>
+              <button onclick="closeModal()" class="bg-slate-100 text-slate-700 text-xs font-bold py-3 rounded-lg">Cancel</button>
+            </div>
+          </div>`;
+        backdrop?.classList.remove('hidden');
+      };
+
+      window.confirmGuardianRemoval = function (requestId) {
+        const input = document.getElementById('guardian-remove-confirm');
+        if (!input || input.value.trim() !== 'confirm') {
+          window.showToast && window.showToast('Type confirm exactly to proceed', 'warning');
+          return;
+        }
+        window.__confirmedRemovalIds ||= new Set();
+        window.__confirmedRemovalIds.add('guardian:' + requestId);
+        window.closeModal();
+        window.removeGuardian(requestId);
+      };
+
+      window.removeMonitoredPatient = async function (patientId) {
+        if (!window.__confirmedRemovalIds?.has(patientId)) {
+          window.requestRemoveMonitoredPatient(patientId);
+          return;
+        }
+        window.__confirmedRemovalIds.delete(patientId);
+        if (window.state.guardianOnline && window.GuardianSyncService?.isOnline()) {
+          if (!await window.GuardianSyncService.revokeLink(patientId)) {
+            window.showToast && window.showToast('Unable to disconnect patient', 'alert');
+            return;
+          }
+          window.secureMonitoredPatients = window.secureMonitoredPatients.filter(function (patient) { return patient.id !== patientId; });
+          setGuardianNickname(patientId, '');
+          window.showToast && window.showToast('✓ Patient disconnected — access removed');
+          window.renderRestoredGuardian();
+          return;
+        }
         const patient = window.secureMonitoredPatients.find(function (item) { return item.id === patientId; });
         window.secureMonitoredPatients = window.secureMonitoredPatients.filter(function (item) { return item.id !== patientId; });
         if (patient) {
           window.state.approvedGuardians = window.state.approvedGuardians.filter(function (guardian) { return guardian.patientCode !== patient.patientCode; });
         }
+        setGuardianNickname(patientId, '');
         persistGuardianState();
         window.showToast && window.showToast('✓ Patient disconnected — access removed');
         window.renderRestoredGuardian();
+      };
+
+      window.requestRemoveMonitoredPatient = function (patientId) {
+        const patient = window.secureMonitoredPatients.find(function (item) { return item.id === patientId; });
+        if (!patient) return;
+        const backdrop = document.getElementById('modal-backdrop');
+        document.getElementById('modal-subtitle').textContent = 'Confirm Disconnect';
+        document.getElementById('modal-title').textContent = 'Remove monitored patient';
+        document.getElementById('modal-body').innerHTML = `
+          <div class="space-y-4">
+            <p class="text-xs text-slate-600">This removes ${escapeGuardianHtml(nicknamePatientName(patient))} from your Family list and revokes access.</p>
+            <div>
+              <label class="block text-xs font-bold text-slate-900 mb-1.5 uppercase tracking-wide">Type confirm to proceed</label>
+              <input id="guardian-remove-confirm" type="text" autocomplete="off" placeholder="confirm" class="w-full bg-white border border-slate-300 rounded-lg px-3 py-2.5 text-xs font-semibold" />
+            </div>
+            <div class="grid grid-cols-2 gap-2">
+              <button onclick="confirmMonitoredPatientRemoval('${escapeGuardianHtml(patientId)}')" class="bg-rose-600 text-white text-xs font-bold py-3 rounded-lg">Remove Access</button>
+              <button onclick="closeModal()" class="bg-slate-100 text-slate-700 text-xs font-bold py-3 rounded-lg">Cancel</button>
+            </div>
+          </div>`;
+        backdrop?.classList.remove('hidden');
+      };
+
+      window.confirmMonitoredPatientRemoval = function (patientId) {
+        const input = document.getElementById('guardian-remove-confirm');
+        if (!input || input.value.trim() !== 'confirm') {
+          window.showToast && window.showToast('Type confirm exactly to proceed', 'warning');
+          return;
+        }
+        window.__confirmedRemovalIds ||= new Set();
+        window.__confirmedRemovalIds.add(patientId);
+        window.closeModal();
+        window.removeMonitoredPatient(patientId);
       };
 
       window.renderRestoredGuardian = function () {
@@ -618,9 +877,18 @@
               <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
                 <h3 class="text-xs font-black uppercase text-slate-900 mb-3">✓ Approved Guardians</h3>
                 ${window.state.approvedGuardians.length ? '<div class="space-y-2">' + window.state.approvedGuardians.map(function (guardian) {
-                  return '<div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2"><div><p class="text-sm font-bold text-slate-900">' + escapeGuardianHtml(guardian.guardianName) + '</p><p class="text-[10px] text-slate-500">' + escapeGuardianHtml(guardian.guardianCode) + '</p></div><button onclick="removeGuardian(this.dataset.id)" data-id="' + escapeGuardianHtml(guardian.id) + '" class="bg-rose-100 text-rose-700 text-xs font-bold px-3 py-1.5 rounded-lg">Remove</button></div>';
+                  return '<div class="bg-white border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2"><div><p class="text-sm font-bold text-slate-900">' + escapeGuardianHtml(guardian.guardianName) + '</p><p class="text-[10px] text-slate-500">' + escapeGuardianHtml(guardian.guardianCode) + '</p></div><button onclick="requestRemoveGuardian(this.dataset.id)" data-id="' + escapeGuardianHtml(guardian.id) + '" class="bg-rose-100 text-rose-700 text-xs font-bold px-3 py-1.5 rounded-lg">Remove</button></div>';
                 }).join('') + '</div>' : '<p class="text-xs text-slate-500">No approved guardians.</p>'}
               </div>
+              <button onclick="toggleEscalateMissedMeds()" class="w-full bg-white border border-slate-200 rounded-2xl p-4 flex items-center justify-between gap-3 text-left">
+                <span>
+                  <span class="block text-xs font-bold text-slate-900">Escalate All Missed Meds</span>
+                  <span class="block text-[10px] text-slate-500 mt-0.5">Notify Guardians 1h after any unlogged dose</span>
+                </span>
+                <span class="relative inline-flex h-6 w-11 shrink-0 rounded-full ${window.state.escalateMissedMeds ? 'bg-teal-600' : 'bg-slate-300'}">
+                  <span class="inline-block h-5 w-5 mt-0.5 rounded-full bg-white shadow ${window.state.escalateMissedMeds ? 'translate-x-5' : 'translate-x-0.5'}"></span>
+                </span>
+              </button>
               <button onclick="setGuardianSubView('monitoring')" class="w-full bg-teal-50 text-teal-700 text-xs font-bold py-3 rounded-xl">← Back to Family</button>
             </div>`;
           return;
@@ -633,16 +901,30 @@
               <button onclick="toggleGuardianSync()" class="flex-1 ${window.state.guardianSyncEnabled ? 'bg-teal-600 text-white' : 'bg-slate-100 text-slate-700'} text-xs font-bold py-3 rounded-lg">${window.state.guardianSyncEnabled ? '🛡️ Sync ON' : '⏸ Sync OFF'}</button>
               <button onclick="setGuardianSubView('mycode')" class="flex-1 bg-slate-100 text-slate-700 text-xs font-bold py-3 rounded-lg">My Code</button>
             </div>
-            ${approvedPatients.length ? '<div class="bg-gradient-to-br from-rose-600 to-rose-700 text-white rounded-2xl p-4"><p class="text-xs font-black uppercase">⚠️ Approved-Guardian Alert</p><p class="text-sm font-bold mt-2">Medication alerts are visible because access was approved.</p></div>' : ''}
+            ${(window.state.guardianAlerts || []).length ? '<section class="space-y-2"><h3 class="text-xs font-black uppercase tracking-wide text-rose-700">🚨 MISSED MED ESCALATIONS (1H+ OVERDUE)</h3>' + window.state.guardianAlerts.map(function (alert) {
+              return '<article class="bg-rose-50 border border-rose-200 rounded-2xl p-4"><p class="text-sm font-bold text-rose-900">' + escapeGuardianHtml(alert.patientName) + '</p><p class="text-xs font-semibold text-slate-800 mt-1">' + escapeGuardianHtml(alert.medName) + '</p><p class="text-[10px] text-rose-700 mt-1">' + escapeGuardianHtml(alert.scheduledTime) + ' • ' + escapeGuardianHtml(alert.overdueBy) + '</p><button onclick="acknowledgeGuardianAlert(this.dataset.id)" data-id="' + escapeGuardianHtml(alert.id) + '" class="w-full mt-3 bg-white border border-rose-200 text-rose-700 text-xs font-bold py-2 rounded-lg">✓ Acknowledge Alert</button></article>';
+            }).join('') + '</section>' : ''}
             <div class="bg-slate-50 border border-slate-200 rounded-2xl p-4">
               <label class="block text-xs font-black uppercase text-slate-900 mb-2.5">+ Request Patient Access</label>
-              <div class="flex gap-2"><input id="link-patient-code" type="text" placeholder="E.g., MED-7429" class="flex-1 bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-slate-900" /><button onclick="requestPatientAccess()" class="bg-teal-600 text-white text-xs font-bold px-4 py-2.5 rounded-lg">Request</button></div>
+              <div class="flex gap-2"><input id="link-patient-code" type="text" maxlength="12" placeholder="E.g., MED-ABCDEFGH" class="flex-1 bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-slate-900" /><button onclick="requestPatientAccess()" class="bg-teal-600 text-white text-xs font-bold px-4 py-2.5 rounded-lg">Request</button></div>
             </div>
             ${window.state.pendingLinkRequests.length ? `<div class="bg-amber-50 border border-amber-200 rounded-2xl p-4"><h3 class="text-xs font-black uppercase text-amber-900 mb-3">⏳ Awaiting Owner Confirmation</h3><div class="space-y-2">${window.state.pendingLinkRequests.map(function (request) {
               return '<div class="bg-white border border-amber-200 rounded-xl p-3 flex items-center justify-between"><div><p class="text-sm font-bold text-slate-900">' + escapeGuardianHtml(request.patientCode) + '</p><p class="text-[10px] text-amber-700">Locked — no medication data available</p></div><button onclick="cancelPendingRequest(this.dataset.id)" data-id="' + escapeGuardianHtml(request.id) + '" class="text-xs font-bold text-rose-600">Cancel</button></div>';
             }).join('')}</div></div>` : ''}
             <div><h3 class="text-sm font-bold text-slate-900 mb-3">👥 Monitored Patients</h3><div class="space-y-3">${approvedPatients.length ? approvedPatients.map(function (patient) {
-              return '<div class="bg-white border border-slate-200 rounded-xl p-4"><div class="flex items-start justify-between gap-2"><div><p class="text-sm font-bold text-slate-900">' + escapeGuardianHtml(patient.patientName) + '</p><p class="text-xs text-slate-500">Code: ' + escapeGuardianHtml(patient.patientCode) + '</p><p class="text-[10px] text-slate-400">Synced ' + escapeGuardianHtml(patient.lastSync) + '</p></div><span class="text-sm font-black text-teal-600">' + patient.adherence + '% Adh.</span></div><div class="space-y-2 my-3">' + patient.meds.map(function (med) { return '<div class="flex justify-between bg-slate-50 rounded-lg px-3 py-2 text-xs"><span class="font-semibold text-slate-700">' + escapeGuardianHtml(med.name) + '</span><span class="font-bold text-slate-500">' + escapeGuardianHtml(med.time) + '</span></div>'; }).join('') + '</div><button onclick="removeMonitoredPatient(this.dataset.id)" data-id="' + escapeGuardianHtml(patient.id) + '" class="w-full bg-rose-50 text-rose-700 text-xs font-bold py-2 rounded-lg">Remove</button></div>';
+              return '<div class="bg-white border border-slate-200 rounded-xl p-4"><div class="flex items-start justify-between gap-2"><div><p class="text-sm font-bold text-slate-900">' + escapeGuardianHtml(nicknamePatientName(patient)) + '</p><p class="text-xs text-slate-500">Code: ' + escapeGuardianHtml(patient.patientCode) + '</p><p class="text-[10px] text-slate-400">Synced ' + escapeGuardianHtml(patient.lastSync) + '</p></div><span class="text-sm font-black text-teal-600">' + patient.adherence + '% Adh.</span></div><div class="space-y-2 my-3">' + patient.meds.map(function (med) {
+                var statusPill = '';
+                if ((med.time || '').toLowerCase().indexOf('needed') !== -1) {
+                  statusPill = '<span class=\"inline-flex rounded-full bg-teal-100 text-teal-700 text-[9px] font-bold px-2 py-1\">' + ((med.takenCount || 0) > 0 ? '✓ Taken • ' + med.takenCount + ' today' : 'PRN • 0 taken today') + '</span>';
+                } else if (med.status === 'taken') {
+                  statusPill = '<span class=\"inline-flex rounded-full bg-emerald-100 text-emerald-700 text-[9px] font-bold px-2 py-1\">✓ Taken • ' + escapeGuardianHtml(med.takenAt || med.time) + '</span>';
+                } else if (med.status === 'missed_1h' || med.status === 'missed_2h') {
+                  statusPill = '<span class=\"inline-flex rounded-full bg-rose-100 text-rose-700 text-[9px] font-bold px-2 py-1\">⚠️ Missed • ' + escapeGuardianHtml(med.time) + '</span>';
+                } else {
+                  statusPill = '<span class=\"inline-flex rounded-full bg-slate-200/70 text-slate-700 text-[9px] font-bold px-2 py-1\">🕒 ' + escapeGuardianHtml(med.time) + '</span>';
+                }
+                return '<div class=\"flex items-center justify-between gap-2 bg-slate-50 rounded-lg px-3 py-2 text-xs\"><span class=\"font-semibold text-slate-700 min-w-0\">' + escapeGuardianHtml(med.name) + '</span>' + statusPill + '</div>';
+              }).join('') + '</div><div class="grid grid-cols-2 gap-2"><button onclick="promptPatientNickname(this.dataset.id, false)" data-id="' + escapeGuardianHtml(patient.id) + '" class="bg-blue-50 text-blue-700 text-xs font-bold py-2 rounded-lg">Edit</button><button onclick="requestRemoveMonitoredPatient(this.dataset.id)" data-id="' + escapeGuardianHtml(patient.id) + '" class="bg-rose-50 text-rose-700 text-xs font-bold py-2 rounded-lg">Remove</button></div></div>';
             }).join('') : '<p class="text-xs text-slate-500">No approved monitored patients. Requests remain locked until accepted.</p>'}</div></div>
           </div>`;
       };

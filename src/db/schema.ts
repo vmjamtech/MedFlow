@@ -112,6 +112,7 @@ export interface MonitoredPatient {
   name: string; // e.g., "Mom (Elena R.)"
   code: string; // "MED-3104" - unique patient invite code
   relation: string; // "Mother", "Father", "Sibling"
+  nickname?: string;
   adherence: number; // 0-100%
   lastSync: string; // "2 mins ago"
   status: 'on_track' | 'overdue' | 'offline';
@@ -124,6 +125,8 @@ export interface MonitoredMedication {
   qty: string; // "1 tablet", "12 units"
   time: string; // "08:00 AM"
   status: 'taken' | 'upcoming' | 'missed_1h' | 'missed_2h';
+  takenAt?: string;
+  takenCount?: number;
 }
 
 export interface GuardianLink {

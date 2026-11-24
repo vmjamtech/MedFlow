@@ -287,6 +287,391 @@
 			"command": "npm run build",
 			"isBackground": false,
 			"problemMatcher": []
+		},
+		{
+			"label": "Type-check Guardian live sync",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build Guardian live sync",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check live Guardian sync",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build live Guardian sync",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Audit hardcoded Guardian code",
+			"type": "shell",
+			"command": "Select-String -Path src\\*.ts,src\\services\\*.ts,src\\views\\*.ts,index.html -Pattern 'MED-7429' | Select-Object Path,LineNumber,Line | Format-Table -Wrap",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Audit Guardian code literals",
+			"type": "shell",
+			"command": "Select-String -Path src\\*.ts,src\\services\\*.ts,src\\views\\*.ts,index.html -Pattern 'MED-7429|MED-XXXX|MED-5518' | Select-Object Path,LineNumber,Line | Format-Table -Wrap",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final Guardian type check",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Final Guardian build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify live Guardian build",
+			"type": "shell",
+			"command": "npx tsc --noEmit; if ($?) { npm run build }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Confirm no hardcoded Guardian code",
+			"type": "shell",
+			"command": "$matches = Select-String -Path src\\*.ts,src\\services\\*.ts,src\\views\\*.ts,index.html -Pattern 'MED-7429|MED-5518|MED-XXXX'; if ($matches) { $matches | Select-Object Path,LineNumber,Line } else { Write-Output 'No legacy hardcoded codes found' }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final live Guardian verification",
+			"type": "shell",
+			"command": "npx tsc --noEmit; if ($?) { npm run build }",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final hardcoded code audit",
+			"type": "shell",
+			"command": "Select-String -Path src\\*.ts,src\\services\\*.ts,src\\views\\*.ts,index.html -Pattern 'MED-7429|MED-5518' | Select-Object Path,LineNumber,Line",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check dose feed sync",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build dose feed sync",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Audit sync mutation wiring",
+			"type": "shell",
+			"command": "Select-String -Path src\\main.ts,src\\services\\scheduler.ts,src\\services\\guardianSync.ts -Pattern 'syncCurrentGuardianDoseFeed|syncPatientDoseFeedToSupabase' | Select-Object Path,LineNumber,Line | Format-Table -Wrap",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final Guardian feed type check",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Final Guardian feed build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Audit Guardian feed migration",
+			"type": "shell",
+			"command": "Select-String -Path supabase\\migrations\\001_guardian_sync.sql -Pattern 'source_key|guardian_profile_summaries|Guardian Dose patient delete|Guardian Dose patient update' | Select-Object LineNumber,Line | Format-Table -Wrap",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check Guardian feeds",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build Guardian feeds",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify Guardian alert types",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build Guardian alert sync",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final Guardian feed type verification",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Final Guardian feed build verification",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Audit synced labels",
+			"type": "shell",
+			"command": "Select-String -Path index.html,src\\main.ts,src\\views\\guardian.ts -Pattern 'Synced Synced|Synced ' | Select-Object Path,LineNumber,Line | Format-Table -Wrap",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check immediate Guardian sync",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build immediate Guardian sync",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final immediate sync type check",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Final immediate sync build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Audit immediate sync triggers",
+			"type": "shell",
+			"command": "Select-String -Path src\\main.ts,src\\services\\scheduler.ts -Pattern 'await syncCurrentGuardianDoseFeed\\(\\)|syncPatientDoseFeedToSupabase' | Select-Object Path,LineNumber,Line | Format-Table -Wrap",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check Guardian UX features",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build Guardian UX features",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final Guardian escalation type check",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Final Guardian escalation build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify Guardian alert filtering types",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build Guardian alert filtering",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check nickname UX",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build nickname UX",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final nickname type check",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Final nickname build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check dose status pills",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build dose status pills",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Type-check Guardian refresh fix",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build Guardian refresh fix",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Final Guardian state type check",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Final Guardian state build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify Guardian state types",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Verify Guardian state build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Confirm Guardian state types",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Confirm Guardian state build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify refresh tab typecheck",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Build refresh tab fix",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Locate tab switch function",
+			"type": "shell",
+			"command": "Select-String -Path src\\main.ts -Pattern '^async function switchTab|^function switchTab' -AllMatches | Select-Object LineNumber,Line",
+			"isBackground": false,
+			"problemMatcher": []
+		},
+		{
+			"label": "Verify refresh tab types",
+			"type": "shell",
+			"command": "npx tsc --noEmit",
+			"isBackground": false,
+			"problemMatcher": "$tsc"
+		},
+		{
+			"label": "Verify refresh tab build",
+			"type": "shell",
+			"command": "npm run build",
+			"isBackground": false,
+			"problemMatcher": []
 		}
 	]
 }

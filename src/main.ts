@@ -9,6 +9,7 @@ import { Capacitor } from '@capacitor/core';
 import { db } from './db/database';
 import type { Medication, Dose, VitalLog, IntakeHistory } from './db/schema';
 import { SchedulerService } from './services/scheduler';
+import { GuardianSyncService } from './services/guardianSync';
 import { getVitalStatus } from './utils/clinical';
 import { renderPillSVG, getPillBgClass } from './utils/pillSvg';
 
@@ -41,6 +42,7 @@ interface AppState {
   reportDateFrom: string;
   reportDateTo: string;
   showMorningBanner: boolean;
+  escalateMissedMeds: boolean;
 }
 
 let state: AppState = {
@@ -49,7 +51,7 @@ let state: AppState = {
   doses: [],
   vitalLogs: [],
   intakeHistory: [],
-  myPatientCode: 'MED-7429',
+  myPatientCode: localStorage.getItem('medflow_patient_code') || '',
   myPatientName: '',
   guardianSyncEnabled: true,
   guardianSubView: 'monitoring',
@@ -61,6 +63,7 @@ let state: AppState = {
   reportDateFrom: '',
   reportDateTo: '',
   showMorningBanner: true,
+  escalateMissedMeds: localStorage.getItem('medflow_escalate_missed_meds') !== 'false',
 };
 
 let prnTimerInterval: NodeJS.Timeout | null = null;
@@ -71,6 +74,142 @@ let linkingPatientFound: any = null;
 let patientCodeLookup: Record<string, any> = {};
 let calendarTargetField: string | null = null; // Track which field is being edited
 let calendarDisplayDate: string = '2026-11-18'; // Current month being displayed
+let guardianEvaluationInterval: number | null = null;
+
+function toRuntimeGuardianLink(link: {
+  id: string;
+  patient_code: string;
+  guardian_code: string;
+  guardian_name: string;
+  status: 'pending' | 'approved' | 'revoked';
+  created_at?: string;
+}) {
+  return {
+    id: link.id,
+    patientCode: link.patient_code,
+    guardianCode: link.guardian_code,
+    guardianName: link.guardian_name,
+    status: link.status,
+    timestamp: link.created_at || new Date().toISOString(),
+  };
+}
+
+async function initializeGuardianSyncState() {
+  (state as any).guardianOnline = await GuardianSyncService.init();
+  (state as any).guardianDemoMode =
+    !GuardianSyncService.isConfigured() || !navigator.onLine;
+  if ((state as any).guardianOnline) {
+    const profile = GuardianSyncService.getProfile();
+    if (profile) {
+      state.myPatientCode = profile.patient_code;
+      state.myPatientName = profile.display_name || localStorage.getItem('medflow_myPatientName') || '';
+      state.escalateMissedMeds = profile.sync_enabled;
+      localStorage.setItem('medflow_escalate_missed_meds', String(profile.sync_enabled));
+      localStorage.setItem('medflow_patient_code', profile.patient_code);
+    }
+    await refreshGuardianSyncState();
+  } else {
+    state.myPatientCode = GuardianSyncService.getOrCreateLocalPatientCode();
+  }
+}
+
+async function refreshGuardianSyncState() {
+  if (!GuardianSyncService.isOnline()) return;
+  const previouslyPendingIds = new Set(
+    ((state as any).pendingLinkRequests || []).map((request: any) => request.id)
+  );
+  const pushed = await syncCurrentGuardianDoseFeed();
+  if (!pushed) {
+    console.warn('Guardian refresh continued without a successful local dose feed push');
+  }
+  await syncOverdueGuardianAlerts();
+  const [incoming, approved, pending, monitored, alerts] = await Promise.all([
+    GuardianSyncService.fetchIncomingRequests(),
+    GuardianSyncService.fetchApprovedGuardians(),
+    GuardianSyncService.fetchPendingRequests(),
+    GuardianSyncService.fetchMonitoredPatients(),
+    GuardianSyncService.fetchGuardianAlerts(),
+  ]);
+  if (monitored.some((patient) => patient.meds.length === 0)) {
+    console.warn('Guardian feed refresh retained a patient with no dose rows; retrying once', {
+      patientCount: monitored.length,
+    });
+    await new Promise((resolve) => window.setTimeout(resolve, 500));
+    const retryMonitored = await GuardianSyncService.fetchMonitoredPatients();
+    monitored.splice(0, monitored.length, ...retryMonitored);
+  }
+  const previousPatients = new Map(
+    (((state as any).monitoredPatients || []) as any[]).map((patient) => [patient.id, patient])
+  );
+  const mergedMonitored = monitored.map((patient) => {
+    const previous = previousPatients.get(patient.id);
+    if (patient.meds.length === 0 && previous?.meds?.length > 0) {
+      return {
+        ...patient,
+        adherence: previous.adherence,
+        meds: previous.meds,
+      };
+    }
+    return patient;
+  });
+  (state as any).incomingRequests = incoming.map(toRuntimeGuardianLink);
+  (state as any).approvedGuardians = approved.map(toRuntimeGuardianLink);
+  (state as any).pendingLinkRequests = pending.map(toRuntimeGuardianLink);
+  const nicknames = JSON.parse(localStorage.getItem('medflow_guardian_nicknames') || '{}');
+  (state as any).monitoredPatients = mergedMonitored.map((patient) => ({
+    ...patient,
+    nickname: nicknames[patient.id] || undefined,
+  }));
+  guardianAlerts = alerts;
+  (state as any).guardianAlerts = alerts;
+  (window as any).secureMonitoredPatients = mergedMonitored.map((patient) => ({
+    id: patient.id,
+    patientName: patient.name,
+    patientCode: patient.code,
+    status: 'approved',
+    guardianName: patient.relation,
+    adherence: patient.adherence,
+    lastSync: patient.lastSync === 'Synced' ? 'just now' : patient.lastSync.replace(/^Synced\s+/i, ''),
+    meds: patient.meds.map((med: { name: string; qty: string; time: string; status: string; takenAt?: string; takenCount?: number }) => ({
+      name: `${med.name} ${med.qty}`.trim(),
+      time: med.time,
+      status: med.status,
+      takenAt: med.takenAt,
+      takenCount: med.takenCount,
+    })),
+  }));
+  if (state.currentTab === 'guardian') {
+    (window as any).renderRestoredGuardian?.();
+  }
+  const newlyApproved = mergedMonitored.find((patient) => previouslyPendingIds.has(patient.id));
+  if (newlyApproved) {
+    window.setTimeout(() => {
+      (window as any).promptPatientNickname?.(newlyApproved.id, true);
+    }, 50);
+  }
+  updateGuardianAlertDot();
+}
+
+async function syncCurrentGuardianDoseFeed() {
+  if (!GuardianSyncService.isOnline() || !state.guardianSyncEnabled) return false;
+  const [medications, doses] = await Promise.all([
+    db.getMedications(),
+    db.getDoses(),
+  ]);
+  return GuardianSyncService.syncPatientDoseFeedToSupabase(
+    medications,
+    doses
+  );
+}
+
+async function syncOverdueGuardianAlerts() {
+  const now = new Date();
+  await GuardianSyncService.evaluateAndEscalateMissedDoses(
+    state.medications,
+    state.doses,
+    now.getHours() * 60 + now.getMinutes()
+  );
+}
 
 // ==========================================
 // INITIALIZATION
@@ -92,7 +231,7 @@ function createShell() {
         <p class="text-[10px] font-black uppercase tracking-wider text-teal-700">Interactive Demo Controls</p>
         <p class="text-[9px] text-slate-500">Development only</p>
       </div>
-      <button onclick="triggerLockScreenNotification('MedFlow test reminder', 'Time to take your medication!')" class="shrink-0 rounded-xl bg-teal-600 px-3 py-2 text-[10px] font-bold text-white shadow-sm">🔔 Test Alert</button>
+      <button onclick="triggerLockScreenNotification('MedFlow missed-dose alert', 'Medication is overdue by at least one hour')" class="shrink-0 rounded-xl bg-teal-600 px-3 py-2 text-[10px] font-bold text-white shadow-sm">🔔 Test Missed Alert</button>
       <button onclick="resetDemoData()" class="shrink-0 rounded-xl bg-slate-100 px-3 py-2 text-[10px] font-bold text-slate-700">Reset Data</button>
     </div>
   ` : '';
@@ -123,7 +262,8 @@ function createShell() {
         </header>
 
         <!-- Main Content (Sole Scrollable Region) -->
-        <main class="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide phone-scroll px-4 pt-4 pb-28">
+        <main class="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide phone-scroll px-4 pt-4 pb-28" data-pull-scroll>
+          <div id="pull-refresh-indicator" class="pull-refresh-indicator" aria-live="polite">↓ Pull to refresh</div>
           <div id="main-content" class="space-y-4 w-full"></div>
         </main>
 
@@ -174,6 +314,7 @@ function createShell() {
     </div>
   `;
 
+  setupPullToRefresh();
   console.log('✓ Shell created with refined mobile layout');
 }
 
@@ -201,6 +342,8 @@ async function initializeApp() {
     state.vitalLogs = await db.getVitalLogs();
     state.intakeHistory = await db.getIntakeHistory(100);
     await reconcileMissingMedicationSchedules();
+    await initializeGuardianSyncState();
+    startGuardianEvaluationInterval();
 
     monitoredPatients = [
       {
@@ -236,10 +379,6 @@ async function initializeApp() {
     for (const patient of monitoredPatients) {
       patientCodeLookup[patient.code] = patient;
     }
-    // Also add test codes for other patients who might share their codes
-    patientCodeLookup['MED-5518'] = { patientName: 'Jimmy', code: 'MED-5518' };
-    patientCodeLookup['MED-7429'] = { patientName: 'Sarah', code: 'MED-7429' };
-
     guardianAlerts = [
       {
         id: 'galert-1',
@@ -259,6 +398,102 @@ async function initializeApp() {
   } catch (error) {
     console.error('❌ Init failed:', error);
   }
+}
+
+function startGuardianEvaluationInterval() {
+  if (guardianEvaluationInterval !== null) {
+    window.clearInterval(guardianEvaluationInterval);
+  }
+  guardianEvaluationInterval = window.setInterval(() => {
+    void syncOverdueGuardianAlerts().then(() => updateGuardianAlertDot());
+  }, 60_000);
+}
+
+function setupPullToRefresh() {
+  const scrollContainer = document.querySelector<HTMLElement>('[data-pull-scroll]');
+  const indicator = document.getElementById('pull-refresh-indicator');
+  if (!scrollContainer || !indicator) return;
+
+  let startY: number | null = null;
+  let pullDistance = 0;
+  let dragging = false;
+
+  const reset = () => {
+    startY = null;
+    pullDistance = 0;
+    dragging = false;
+    indicator.classList.remove('is-visible', 'is-ready', 'is-syncing');
+    indicator.textContent = '↓ Pull to refresh';
+    indicator.style.transform = 'translateY(-120%)';
+  };
+
+  scrollContainer.addEventListener('pointerdown', (event) => {
+    const target = event.target as HTMLElement;
+    if (scrollContainer.scrollTop > 0 || target.closest('button, input, select, textarea, a')) return;
+    startY = event.clientY;
+    dragging = true;
+  });
+
+  scrollContainer.addEventListener('pointermove', (event) => {
+    if (!dragging || startY === null || scrollContainer.scrollTop > 0) return;
+    pullDistance = Math.max(0, Math.min(90, (event.clientY - startY) * 0.55));
+    if (pullDistance <= 8) return;
+    event.preventDefault();
+    indicator.classList.add('is-visible');
+    indicator.style.transform = `translateY(${pullDistance - 42}px)`;
+    indicator.classList.toggle('is-ready', pullDistance >= 60);
+    indicator.textContent = pullDistance >= 60 ? '↻ Release to sync' : '↓ Pull to refresh';
+  });
+
+  const finish = async () => {
+    if (!dragging) return;
+    const shouldRefresh = pullDistance >= 60;
+    if (!shouldRefresh) {
+      reset();
+      return;
+    }
+    indicator.classList.add('is-syncing');
+    indicator.classList.remove('is-ready');
+    indicator.textContent = '↻ Syncing with Supabase...';
+    try {
+      await refreshAllGuardianData();
+    } finally {
+      window.setTimeout(reset, 250);
+    }
+  };
+
+  scrollContainer.addEventListener('pointerup', () => void finish());
+  scrollContainer.addEventListener('pointercancel', reset);
+}
+
+async function refreshAllGuardianData() {
+  const [medications, doses] = await Promise.all([
+    db.getMedications(),
+    db.getDoses(),
+  ]);
+  state.medications = medications;
+  state.doses = doses;
+  await syncCurrentGuardianDoseFeed();
+  await syncOverdueGuardianAlerts();
+  await refreshGuardianSyncState();
+  renderApp();
+}
+
+async function toggleEscalateMissedMeds() {
+  const enabled = !state.escalateMissedMeds;
+  state.escalateMissedMeds = enabled;
+  localStorage.setItem('medflow_escalate_missed_meds', String(enabled));
+  const saved = await GuardianSyncService.setEscalationEnabled(enabled);
+  if (!saved) {
+    state.escalateMissedMeds = !enabled;
+    localStorage.setItem('medflow_escalate_missed_meds', String(!enabled));
+    showToast('Unable to update missed-med escalation', 'warning');
+    renderApp();
+    return;
+  }
+  if (enabled) await syncOverdueGuardianAlerts();
+  showToast(enabled ? '✓ Missed-med alerts enabled' : 'Missed-med alerts paused');
+  renderApp();
 }
 
 async function seedSampleData() {
@@ -546,6 +781,8 @@ async function takeScheduledDose(doseId: string, simulatedLateMinutes?: number) 
 
   await db.saveDose(dose);
   await db.saveMedication(med);
+  await syncCurrentGuardianDoseFeed();
+  await syncOverdueGuardianAlerts();
   
   showToast(
     `✓ Logged ${formatQuantity(med.doseQty, med.unit)} of ${med.name}. ${med.stockRemaining} left.`,
@@ -563,6 +800,7 @@ async function snoozeDose(doseId: string) {
   dose.shiftNote = 'Snoozed +15 mins';
   
   await db.saveDose(dose);
+  await syncCurrentGuardianDoseFeed();
   showToast(`⏰ Snoozed ${med?.name} to ${formatMinutesTo12h(dose.scheduledMinutes)}`);
   renderApp();
 }
@@ -610,6 +848,7 @@ async function takePrnDose(medId: string) {
   await db.saveIntakeHistory(historyEntry);
 
   await db.saveMedication(med);
+  await syncCurrentGuardianDoseFeed();
   startPrnTimerLoop();
   showToast(`✓ Logged PRN ${med.name}. ${med.cooldownHours}h cooldown started.`);
   renderApp();
@@ -620,6 +859,7 @@ async function skipPrnCooldown(medId: string) {
   if (med) {
     med.cooldownRemainingSeconds = 0;
     await db.saveMedication(med);
+    await syncCurrentGuardianDoseFeed();
     showToast(`⏩ Cooldown reset for ${med.name}`);
     renderApp();
   }
@@ -640,6 +880,7 @@ async function refillMedication(medId: string) {
   med.stockTotal = Math.max(med.stockTotal, med.stockRemaining);
   
   await db.saveMedication(med);
+  await syncCurrentGuardianDoseFeed();
   showToast(`📦 Refilled +${addQty} ${med.unit}s of ${med.name}`);
   renderApp();
 }
@@ -708,6 +949,7 @@ async function deleteMedication(medId: string) {
     state.medications = state.medications.filter(m => m.id !== medId);
     state.doses = state.doses.filter(d => d.medId !== medId);
     await db.deleteMedication(medId);
+    await syncCurrentGuardianDoseFeed();
     showToast(`🗑️ Deleted ${med.name}`);
     renderApp();
   } else if (confirm !== null) {
@@ -879,8 +1121,15 @@ function startPrnTimerLoop() {
 // EVENT HANDLERS - UI NAVIGATION
 // ==========================================
 
-function switchTab(tab: 'today' | 'vitals' | 'cabinet' | 'guardian' | 'report') {
+async function switchTab(tab: 'today' | 'vitals' | 'cabinet' | 'guardian' | 'report') {
   state.currentTab = tab;
+  if (tab === 'guardian') {
+    if (!GuardianSyncService.isOnline()) {
+      await initializeGuardianSyncState();
+    } else {
+      await refreshGuardianSyncState();
+    }
+  }
   
   document.querySelectorAll('.nav-btn').forEach(btn => {
     btn.classList.toggle('text-teal-600', btn.getAttribute('data-tab') === tab);
@@ -1141,6 +1390,7 @@ async function submitAddMedication(med: Medication, isEdit: boolean) {
     .filter((dose) => dose.medId !== med.id)
     .concat(scheduledDoses)
     .sort((a, b) => a.scheduledMinutes - b.scheduledMinutes);
+  await syncCurrentGuardianDoseFeed();
 
   closeModal();
   showToast(`✓ ${isEdit ? 'Updated' : 'Added'} ${med.name}`);
@@ -1158,6 +1408,10 @@ function setGuardianSubView(view: 'monitoring' | 'mycode') {
 
 async function toggleGuardianSync() {
   state.guardianSyncEnabled = !state.guardianSyncEnabled;
+  GuardianSyncService.toggleSync(state.guardianSyncEnabled);
+  if (state.guardianSyncEnabled) {
+    await refreshGuardianSyncState();
+  }
   showToast(state.guardianSyncEnabled ? '🛡️ Guardian Sync enabled' : 'Guardian Sync paused');
   renderApp();
 }
@@ -1181,14 +1435,19 @@ function saveMyPatientName() {
     return;
   }
   state.myPatientName = name;
+  if (GuardianSyncService.isOnline()) {
+    void GuardianSyncService.savePatientName(name).then((saved) => {
+      if (!saved) showToast('Name saved locally; cloud sync failed', 'warning');
+    });
+  }
   showToast(`✓ Saved: "${name}"`);
   renderApp();
 }
 
 function validatePatientCode(code: string) {
   const cleanCode = code.trim().toUpperCase();
-  if (!cleanCode || cleanCode.length < 4) {
-    showToast('Enter a valid patient code (e.g., MED-5518)', 'warning');
+  if (!/^MED-[A-HJ-NP-Z2-9]{8}$/.test(cleanCode)) {
+    showToast('Enter a valid MED-XXXXXXXX patient code', 'warning');
     return;
   }
 
@@ -1247,8 +1506,8 @@ function cancelPatientLink() {
 
 async function linkNewPatientByCode(code: string) {
   const cleanCode = code.trim().toUpperCase();
-  if (!cleanCode || cleanCode.length < 4) {
-    showToast('Enter a valid patient code (e.g., MED-5518)', 'warning');
+  if (!/^MED-[A-HJ-NP-Z2-9]{8}$/.test(cleanCode)) {
+    showToast('Enter a valid MED-XXXXXXXX patient code', 'warning');
     return;
   }
   if (monitoredPatients.some((p: any) => p.code === cleanCode)) {
@@ -1274,9 +1533,18 @@ async function linkNewPatientByCode(code: string) {
 async function acknowledgeGuardianAlert(alertId: string) {
   const alert = guardianAlerts.find((a: any) => a.id === alertId);
   if (alert) {
-    alert.acknowledged = true;
+    if (GuardianSyncService.isOnline()) {
+      const acknowledged = await GuardianSyncService.acknowledgeAlert(alertId);
+      if (!acknowledged) {
+        showToast('Unable to acknowledge alert in Supabase', 'warning');
+        return;
+      }
+    }
+    guardianAlerts = guardianAlerts.filter((item: any) => item.id !== alertId);
+    (state as any).guardianAlerts = guardianAlerts;
     showToast(`✓ Acknowledged alert`);
     renderApp();
+    updateGuardianAlertDot();
   }
 }
 
@@ -1352,7 +1620,8 @@ function updateLowStockDot() {
 function updateGuardianAlertDot() {
   const dot = document.getElementById('guardian-alert-dot');
   if (!dot) return;
-  const hasUnacknowledgedAlerts = guardianAlerts.some((a: any) => !a.acknowledged);
+  const activeAlerts = (state as any).guardianAlerts || guardianAlerts;
+  const hasUnacknowledgedAlerts = activeAlerts.some((a: any) => !a.acknowledged);
   if (hasUnacknowledgedAlerts) {
     dot.classList.remove('hidden');
   } else {
@@ -2128,15 +2397,16 @@ function renderGuardianTab(): string {
           <input 
             id="link-patient-code" 
             type="text" 
-            placeholder="E.g., MED-5518" 
+            maxlength="12"
+            placeholder="E.g., MED-ABCDEFGH" 
             class="flex-1 bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-slate-900 placeholder-slate-500 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20"
           />
           <button onclick="validatePatientCode(document.getElementById('link-patient-code').value)" class="bg-teal-600 hover:bg-teal-700 text-white text-xs font-bold px-4 py-2.5 rounded-lg transition active:scale-95">
             Check
           </button>
         </div>
-        <button onclick="showToast('📋 Test: Use MED-5518 or MED-7429')" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2 rounded-lg transition">
-          Test Codes
+        <button onclick="showToast('📋 Enter a shared MED-XXXXXXXX code')" class="w-full bg-slate-100 hover:bg-slate-200 text-slate-700 text-xs font-bold py-2 rounded-lg transition">
+          Code Help
         </button>
       `;
     }
@@ -2908,6 +3178,28 @@ function dismissVitalsPrompt() {
 // ==========================================
 
 function triggerLockScreenNotification(title: string = 'MedFlow Reminder', message: string = 'Time to take your medication!') {
+  if (import.meta.env.DEV && GuardianSyncService.isOnline()) {
+    const dose = state.doses.find((item) => item.status === 'pending');
+    const med = dose ? state.medications.find((item) => item.id === dose.medId) : state.medications[0];
+    if (med) {
+      const scheduledMinutes = dose?.scheduledMinutes || 0;
+      const alert = {
+        id: 'galert-' + Date.now(),
+        patientName: state.myPatientName || 'MedFlow Patient',
+        medName: `${med.name} ${med.strength}`.trim(),
+        scheduledTime: formatMinutesTo12h(scheduledMinutes),
+        overdueBy: '1h 00m past window',
+        acknowledged: false,
+      };
+      guardianAlerts.unshift(alert);
+      void GuardianSyncService.pushMissedDoseAlert(alert).then((insertedId) => {
+        if (insertedId) alert.id = insertedId;
+        showToast(insertedId ? '✓ Test missed alert synced to Supabase' : 'Unable to sync missed alert', insertedId ? 'success' : 'warning');
+        renderApp();
+      });
+    }
+  }
+
   if ('Notification' in window && Notification.permission === 'granted') {
     new Notification(title, {
       body: message,
@@ -2951,6 +3243,8 @@ async function resetDemoData() {
         'medflow_guardian_pending',
         'medflow_guardian_monitored',
         'medflow_myPatientName',
+        'medflow_guardian_nicknames',
+        'medflow_guardian_nickname_prompted',
       ].forEach((key) => localStorage.removeItem(key));
     } else {
       showToast('Demo reset is browser-only', 'warning');
@@ -2973,6 +3267,7 @@ async function resetDemoData() {
     (state as any).approvedGuardians = [];
     (state as any).pendingLinkRequests = [];
     (state as any).incomingRequestsOpen = false;
+    await syncCurrentGuardianDoseFeed();
     
     showToast('✓ Demo data reset');
     renderApp();
@@ -3024,6 +3319,7 @@ async function resetDemoData() {
 (window as any).dismissVitalsPrompt = dismissVitalsPrompt;
 (window as any).setGuardianSubView = setGuardianSubView;
 (window as any).toggleGuardianSync = toggleGuardianSync;
+(window as any).toggleEscalateMissedMeds = toggleEscalateMissedMeds;
 (window as any).copyPatientCode = copyPatientCode;
 (window as any).saveMyPatientName = saveMyPatientName;
 (window as any).validatePatientCode = validatePatientCode;
@@ -3033,6 +3329,7 @@ async function resetDemoData() {
 (window as any).acknowledgeGuardianAlert = acknowledgeGuardianAlert;
 (window as any).showToast = showToast;
 (window as any).__MEDFLOW_DEV__ = import.meta.env.DEV;
+(window as any).GuardianSyncService = GuardianSyncService;
 (window as any).state = state;
 (window as any).getVitalStatus = getVitalStatus;
 (window as any).renderApp = renderApp;

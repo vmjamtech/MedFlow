@@ -62,6 +62,38 @@ body {
   min-height: 100dvh;
 }
 
+.pull-refresh-indicator {
+  position: absolute;
+  top: 0.25rem;
+  left: 0;
+  right: 0;
+  z-index: 25;
+  height: auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  color: #0f766e;
+  font-size: 0.6875rem;
+  font-weight: 700;
+  opacity: 0;
+  transform: translateY(-120%);
+  pointer-events: none;
+  transition: transform 120ms ease, opacity 120ms ease;
+}
+
+[data-pull-scroll] {
+  position: relative;
+}
+
+.pull-refresh-indicator.is-visible {
+  opacity: 1;
+}
+
+.pull-refresh-indicator.is-ready,
+.pull-refresh-indicator.is-syncing {
+  color: #0d9488;
+}
+
 /* Animations */
 @keyframes slideUp {
   from {

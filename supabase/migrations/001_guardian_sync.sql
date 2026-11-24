@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS guardian_links (
 
 CREATE TABLE IF NOT EXISTS guardian_dose_feed (
   id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  source_key TEXT,
   patient_user_id UUID NOT NULL REFERENCES auth.users(id) ON DELETE CASCADE,
   med_name TEXT NOT NULL,
   dose_qty TEXT NOT NULL,
@@ -60,11 +61,24 @@ ALTER TABLE guardian_links
   ADD COLUMN IF NOT EXISTS created_at TIMESTAMPTZ DEFAULT NOW();
 
 ALTER TABLE guardian_dose_feed
+  ADD COLUMN IF NOT EXISTS source_key TEXT,
   ADD COLUMN IF NOT EXISTS patient_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
   ADD COLUMN IF NOT EXISTS scheduled_time TEXT,
   ADD COLUMN IF NOT EXISTS status TEXT,
   ADD COLUMN IF NOT EXISTS adherence_pct NUMERIC(5, 2),
   ADD COLUMN IF NOT EXISTS updated_at TIMESTAMPTZ DEFAULT NOW();
+
+ALTER TABLE guardian_dose_feed
+  DROP CONSTRAINT IF EXISTS guardian_dose_feed_status_check;
+UPDATE guardian_dose_feed
+SET status = CASE
+  WHEN status = 'taken' THEN 'taken'
+  WHEN status IN ('missed', 'missed_1h', 'overdue') THEN 'missed_1h'
+  ELSE 'upcoming'
+END;
+ALTER TABLE guardian_dose_feed
+  ADD CONSTRAINT guardian_dose_feed_status_check
+  CHECK (status IN ('taken', 'upcoming', 'missed_1h'));
 
 ALTER TABLE guardian_alerts
   ADD COLUMN IF NOT EXISTS patient_user_id UUID REFERENCES auth.users(id) ON DELETE CASCADE,
@@ -89,6 +103,8 @@ CREATE UNIQUE INDEX IF NOT EXISTS guardian_links_guardian_patient_unique_idx
   ON guardian_links(guardian_user_id, patient_code);
 CREATE INDEX IF NOT EXISTS guardian_dose_feed_patient_idx
   ON guardian_dose_feed(patient_user_id, updated_at DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS guardian_dose_feed_patient_source_unique
+  ON guardian_dose_feed(patient_user_id, source_key);
 CREATE INDEX IF NOT EXISTS guardian_alerts_patient_idx
   ON guardian_alerts(patient_user_id);
 
@@ -112,6 +128,52 @@ CREATE POLICY "Guardian Profiles update own"
   ON guardian_profiles FOR UPDATE
   USING (user_id = auth.uid())
   WITH CHECK (user_id = auth.uid());
+
+CREATE OR REPLACE FUNCTION public.register_guardian_profile(
+  requested_patient_code TEXT
+)
+RETURNS JSONB
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+DECLARE
+  registered guardian_profiles%ROWTYPE;
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+  IF requested_patient_code !~ '^MED-[A-HJ-NP-Z2-9]{8}$' THEN
+    RAISE EXCEPTION 'Invalid patient code';
+  END IF;
+
+  INSERT INTO guardian_profiles (
+    user_id,
+    patient_code,
+    display_name,
+    sync_enabled
+  )
+  VALUES (
+    auth.uid(),
+    upper(requested_patient_code),
+    '',
+    TRUE
+  )
+  ON CONFLICT (user_id) DO UPDATE
+  SET patient_code = guardian_profiles.patient_code
+  RETURNING * INTO registered;
+
+  RETURN jsonb_build_object(
+    'user_id', registered.user_id,
+    'patient_code', registered.patient_code,
+    'display_name', registered.display_name,
+    'sync_enabled', registered.sync_enabled
+  );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.register_guardian_profile(TEXT) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.register_guardian_profile(TEXT) TO authenticated;
 
 DROP POLICY IF EXISTS "Guardians can view own links" ON guardian_links;
 DROP POLICY IF EXISTS "Guardians can create links" ON guardian_links;
@@ -149,6 +211,15 @@ DROP POLICY IF EXISTS "Guardian Dose approved read" ON guardian_dose_feed;
 CREATE POLICY "Guardian Dose patient write"
   ON guardian_dose_feed FOR INSERT
   WITH CHECK (patient_user_id = auth.uid());
+DROP POLICY IF EXISTS "Guardian Dose patient update" ON guardian_dose_feed;
+CREATE POLICY "Guardian Dose patient update"
+  ON guardian_dose_feed FOR UPDATE
+  USING (patient_user_id = auth.uid())
+  WITH CHECK (patient_user_id = auth.uid());
+DROP POLICY IF EXISTS "Guardian Dose patient delete" ON guardian_dose_feed;
+CREATE POLICY "Guardian Dose patient delete"
+  ON guardian_dose_feed FOR DELETE
+  USING (patient_user_id = auth.uid());
 CREATE POLICY "Guardian Dose approved read"
   ON guardian_dose_feed FOR SELECT
   USING (
@@ -161,6 +232,50 @@ CREATE POLICY "Guardian Dose approved read"
         AND guardian_links.status = 'approved'
     )
   );
+
+CREATE OR REPLACE FUNCTION public.guardian_profile_summaries(
+  requested_user_ids UUID[]
+)
+RETURNS TABLE (
+  user_id UUID,
+  patient_code TEXT,
+  display_name TEXT
+)
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+  IF auth.uid() IS NULL THEN
+    RAISE EXCEPTION 'Authentication required';
+  END IF;
+
+  RETURN QUERY
+  SELECT profiles.user_id, profiles.patient_code, profiles.display_name
+  FROM guardian_profiles profiles
+  WHERE profiles.user_id = ANY(requested_user_ids)
+    AND (
+      profiles.user_id = auth.uid()
+      OR EXISTS (
+        SELECT 1
+        FROM guardian_links links
+        WHERE (
+          links.patient_user_id = profiles.user_id
+          AND links.guardian_user_id = auth.uid()
+          AND links.status IN ('pending', 'approved')
+        )
+        OR (
+          links.patient_user_id = auth.uid()
+          AND links.guardian_user_id = profiles.user_id
+          AND links.status IN ('pending', 'approved')
+        )
+      )
+    );
+END;
+$$;
+
+REVOKE ALL ON FUNCTION public.guardian_profile_summaries(UUID[]) FROM PUBLIC;
+GRANT EXECUTE ON FUNCTION public.guardian_profile_summaries(UUID[]) TO authenticated;
 
 DROP POLICY IF EXISTS "Guardians can view linked patient alerts" ON guardian_alerts;
 DROP POLICY IF EXISTS "Guardians can acknowledge alerts" ON guardian_alerts;
