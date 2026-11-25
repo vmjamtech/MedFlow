@@ -271,29 +271,41 @@ function createShell() {
         
         <!-- Header with Time & Date (Pinned Top, Safe-Area Aware) -->
         <header class="shrink-0 bg-white border-b border-slate-200/60 shadow-sm" style="padding-top: max(0.75rem, env(safe-area-inset-top));">
-          <div class="px-5 py-4 flex items-start justify-between">
-            <div class="flex-1">
+          <div class="px-5 py-4">
+            <div class="mb-2.5 flex items-center justify-between gap-3">
+              <div class="flex min-w-0 items-center gap-2">
+                <div class="relative h-6 w-6 shrink-0">
+                  <img src="/logo.png" alt="MedFlow" class="h-6 w-6 rounded-lg object-cover shadow-sm" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';" />
+                  <span class="hidden h-6 w-6 place-items-center rounded-lg bg-teal-600 text-[13px] font-black text-white shadow-sm">M</span>
+                </div>
+                <span class="text-base font-extrabold tracking-tight text-slate-900">MedFlow</span>
+                <span class="h-1.5 w-1.5 rounded-full bg-teal-500" aria-hidden="true"></span>
+              </div>
+              <div class="text-right flex-shrink-0">
+                <button id="profile-pill" type="button" onclick="openProfileModal()" class="relative flex max-w-[170px] items-center gap-2 rounded-full border border-slate-200 bg-slate-50 py-1 pl-1 pr-3 text-left shadow-sm transition hover:border-teal-300 active:scale-[0.98]">
+                  <span id="profile-pill-avatar" class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-100 text-[11px] font-black text-teal-700">
+                    <svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"/></svg>
+                  </span>
+                  <span id="profile-update-badge" class="hidden absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-white bg-rose-500 shadow-sm" aria-label="App update available"></span>
+                  <span id="profile-pill-name" class="truncate text-xs font-bold text-slate-800">Set Profile</span>
+                </button>
+              </div>
+            </div>
+            <div>
               <div class="flex items-center gap-1.5 mb-0.5">
                 <span class="text-sm font-black text-slate-900">${timeStr}</span>
                 <span class="text-xs font-semibold text-slate-500">•</span>
                 <span class="text-xs font-semibold text-slate-600">${dayStr}</span>
               </div>
-              <div class="flex items-center gap-2">
-                <h1 id="header-title" class="text-lg font-black text-slate-900 tracking-tight">Today's Regimen</h1>
+              <div class="flex items-center justify-between gap-3">
+                <div>
+                  <h1 id="header-title" class="text-lg font-black text-slate-900 tracking-tight">Today's Regimen</h1>
+                </div>
                 <span id="adherence-pill" class="inline-flex shrink-0 items-center gap-1 bg-emerald-100 text-emerald-700 text-xs font-bold px-2.5 py-1.5 rounded-full border border-emerald-300">
                   <span class="text-green-600">✓</span>
                   <span id="adherence-count">0/0</span>
                 </span>
               </div>
-            </div>
-            <div class="text-right flex-shrink-0">
-              <button id="profile-pill" type="button" onclick="openProfileModal()" class="relative flex max-w-[170px] items-center gap-2 rounded-full border border-slate-200 bg-slate-50 py-1 pl-1 pr-3 text-left shadow-sm transition hover:border-teal-300 active:scale-[0.98]">
-                <span id="profile-pill-avatar" class="flex h-9 w-9 shrink-0 items-center justify-center overflow-hidden rounded-full bg-teal-100 text-[11px] font-black text-teal-700">
-                  <svg aria-hidden="true" class="h-5 w-5" viewBox="0 0 24 24" fill="currentColor"><path d="M12 12a4 4 0 1 0 0-8 4 4 0 0 0 0 8Zm0 2c-4.42 0-8 2.24-8 5v1h16v-1c0-2.76-3.58-5-8-5Z"/></svg>
-                </span>
-                <span id="profile-update-badge" class="hidden absolute -right-0.5 -top-0.5 h-3 w-3 rounded-full border-2 border-white bg-rose-500 shadow-sm" aria-label="App update available"></span>
-                <span id="profile-pill-name" class="truncate text-xs font-bold text-slate-800">Set Profile</span>
-              </button>
             </div>
           </div>
         </header>
@@ -2732,13 +2744,23 @@ function renderReportTab(): string {
 
   // Clinician Summary Banner
   html += `
-    <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl p-5 mb-5 shadow-lg flex items-start justify-between gap-3 border border-slate-700/50">
+    <div class="bg-gradient-to-br from-slate-900 to-slate-800 text-white rounded-3xl p-5 mb-5 shadow-lg border border-slate-700/50">
+      <div class="mb-3 inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1.5">
+        <div class="relative h-5 w-5">
+          <img src="/logo.png" alt="MedFlow" class="h-5 w-5 rounded-md object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';" />
+          <span class="hidden h-5 w-5 place-items-center rounded-md bg-teal-400 text-[10px] font-black text-slate-900">M</span>
+        </div>
+        <span class="text-xs font-extrabold tracking-tight">MedFlow</span>
+        <span class="h-1.5 w-1.5 rounded-full bg-teal-400" aria-hidden="true"></span>
+      </div>
+      <div class="flex items-start justify-between gap-3">
       <div>
         <p class="text-[10px] font-bold uppercase tracking-wider text-slate-400">📋 Doctor Visit Summary</p>
         <h2 class="text-sm font-bold mt-0.5">Health Report</h2>
         <p class="text-[11px] text-slate-300 mt-0.5">Correlates medication intake with vitals response.</p>
       </div>
       <span class="text-2xl shrink-0">📋</span>
+      </div>
     </div>
 
     <button onclick="openExportDateRangeModal()" class="w-full bg-teal-500 hover:bg-teal-600 text-white text-xs font-extrabold py-3 rounded-xl transition mb-5 shadow-lg shadow-teal-500/20">

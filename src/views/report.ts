@@ -33,6 +33,14 @@ export async function renderReportTab(): Promise<HTMLElement> {
   const banner = document.createElement('div');
   banner.className = 'bg-slate-900 text-white rounded-3xl p-4 space-y-3 shadow-sm';
   banner.innerHTML = `
+    <div class="inline-flex items-center gap-2 rounded-full bg-white/10 px-2.5 py-1.5">
+      <div class="relative h-5 w-5">
+        <img src="/logo.png" alt="MedFlow" class="h-5 w-5 rounded-md object-cover" onerror="this.style.display='none'; this.nextElementSibling.style.display='grid';" />
+        <span class="hidden h-5 w-5 place-items-center rounded-md bg-teal-400 text-[10px] font-black text-slate-900">M</span>
+      </div>
+      <span class="text-xs font-extrabold tracking-tight">MedFlow</span>
+      <span class="h-1.5 w-1.5 rounded-full bg-teal-400" aria-hidden="true"></span>
+    </div>
     <div class="flex items-start justify-between gap-3">
       <div>
         <span class="text-[10px] font-bold uppercase tracking-wider text-teal-400">Clinician Summary</span>
