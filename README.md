@@ -10,7 +10,7 @@ A hybrid offline-first Android mobile app for personal medication adherence, vit
 - **Clinical Classifications:** ACC/AHA Blood Pressure, ADA Blood Sugar, Resting Pulse standards
 - **Dynamic Dose Scheduling:** Fixed daily times, interval-based (every N hours), PRN with cooldown/daily caps
 - **Late-Dose Shifting:** Automatic 90-minute interval recalculation for delayed doses
-- **Exact Alarms:** Lock-screen reminders with native `@capacitor/local-notifications` and action buttons
+- **Medication Reminders:** Native Android one-off exact alarms for upcoming scheduled doses
 - **Vitals Trends:** 7-reading interactive SVG dual-line BP chart and single-line glucose/pulse sparklines
 - **Printable Reports:** `@media print` CSS isolationfor clinician PDF export
 
@@ -63,6 +63,12 @@ npm run build            # Build web assets for Capacitor
 npm run android:build    # Install APK to Android device
 npm run android:run      # Launch on device
 ```
+
+## Android medication reminders
+
+MedFlow schedules pending fixed and interval doses up to seven days ahead. Open or resume the app regularly to extend that window. Existing undated doses are assigned to the local date of the first launch after upgrading; medication and intake history are retained.
+
+Allow notifications and, when requested, alarms and reminders in Android settings. Android may defer or throttle idle alarms, and force-stopping the app can prevent delivery. Test reminders on the intended device and use a separate reminder until delivery is verified. The `USE_EXACT_ALARM` permission has Google Play eligibility requirements that must be checked before release.
 
 ## 100% Feature Parity with Prototype
 

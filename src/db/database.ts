@@ -6,6 +6,7 @@
 import { CapacitorSQLite, SQLiteDBConnection, SQLiteConnection } from '@capacitor-community/sqlite';
 import { Capacitor } from '@capacitor/core';
 import type { Medication, Dose, VitalLog, IntakeHistory } from './schema';
+import { localDateAtMinutes, localDateKey } from '../utils/localDate';
 
 export interface LocalProfile {
   name: string;
@@ -29,7 +30,7 @@ export class MedFlowDatabase {
 
   async init(): Promise<void> {
     // Detect if running on native platform (Android/iOS)
-    this.isNativePlatform = !Capacitor.isNativePlatform || Capacitor.getPlatform() !== 'web';
+    this.isNativePlatform = Capacitor.isNativePlatform();
 
     try {
       if (this.isNativePlatform) {
@@ -46,8 +47,11 @@ export class MedFlowDatabase {
         console.log('✓ localStorage fallback initialized (browser mode)');
       }
     } catch (err) {
-      // Fallback to localStorage if SQLite fails
-      console.warn('SQLite initialization failed, using localStorage fallback', err);
+      if (this.isNativePlatform) {
+        console.error('SQLite initialization failed', err);
+        throw err;
+      }
+      console.warn('Browser storage initialization failed', err);
       this.initializeLocalStorage();
     }
   }
@@ -67,6 +71,7 @@ export class MedFlowDatabase {
         scheduleType TEXT NOT NULL,
         fixedTimes TEXT,
         intervalHours INTEGER,
+        intervalAnchor TEXT,
         cooldownHours INTEGER,
         maxPerDay INTEGER,
         mealRequired TEXT NOT NULL,
@@ -86,6 +91,8 @@ export class MedFlowDatabase {
         id TEXT PRIMARY KEY,
         medId TEXT NOT NULL,
         scheduledMinutes INTEGER NOT NULL,
+        scheduledDate TEXT,
+        scheduledAt TEXT,
         originalMinutes INTEGER NOT NULL,
         status TEXT NOT NULL DEFAULT 'pending',
         takenAtStr TEXT,
@@ -133,6 +140,16 @@ export class MedFlowDatabase {
         updatedAt TEXT
       );
 
+      CREATE TABLE IF NOT EXISTS generated_dose_days (
+        medId TEXT NOT NULL,
+        scheduledDate TEXT NOT NULL,
+        PRIMARY KEY (medId, scheduledDate)
+      );
+
+      CREATE TABLE IF NOT EXISTS app_migrations (
+        id TEXT PRIMARY KEY
+      );
+
       CREATE INDEX IF NOT EXISTS idx_doses_scheduled ON doses(scheduledMinutes);
       CREATE INDEX IF NOT EXISTS idx_vitals_date ON vital_logs(date);
       CREATE INDEX IF NOT EXISTS idx_vitals_type ON vital_logs(type);
@@ -143,15 +160,50 @@ export class MedFlowDatabase {
         await this.db.run(sql);
       }
     }
+    const medicationColumns = await this.db.query('PRAGMA table_info(medications)');
+    if (!medicationColumns.values?.some((column: { name: string }) => column.name === 'intervalAnchor')) {
+      await this.db.run('ALTER TABLE medications ADD COLUMN intervalAnchor TEXT');
+    }
+    const doseColumns = await this.db.query('PRAGMA table_info(doses)');
+    const needsDoseDateMigration = !doseColumns.values?.some((column: { name: string }) => column.name === 'scheduledDate');
+    if (needsDoseDateMigration) {
+      await this.db.run('ALTER TABLE doses ADD COLUMN scheduledDate TEXT');
+    }
+    if (!doseColumns.values?.some((column: { name: string }) => column.name === 'scheduledAt')) {
+      await this.db.run('ALTER TABLE doses ADD COLUMN scheduledAt TEXT');
+    }
+    await this.db.run(
+      'UPDATE doses SET scheduledDate = ? WHERE scheduledDate IS NULL',
+      [localDateKey(new Date())]
+    );
+    const backfill = await this.db.query(
+      'SELECT 1 FROM app_migrations WHERE id = ?',
+      ['dose-calendar-v1']
+    );
+    if (!backfill.values?.length) {
+      await this.db.run(
+        'INSERT OR IGNORE INTO generated_dose_days (medId, scheduledDate) SELECT DISTINCT medId, scheduledDate FROM doses'
+      );
+      await this.db.run('INSERT OR IGNORE INTO app_migrations (id) VALUES (?)', ['dose-calendar-v1']);
+    }
   }
 
   private initializeLocalStorage(): void {
     // Initialize localStorage structure for browser fallback
-    if (!localStorage.getItem('medflow_medications')) {
-      localStorage.setItem('medflow_medications', JSON.stringify([]));
-      localStorage.setItem('medflow_doses', JSON.stringify([]));
-      localStorage.setItem('medflow_vitalLogs', JSON.stringify([]));
-      localStorage.setItem('medflow_intakeHistory', JSON.stringify([]));
+    for (const key of ['medflow_medications', 'medflow_doses', 'medflow_vitalLogs', 'medflow_intakeHistory']) {
+      if (localStorage.getItem(key) === null) localStorage.setItem(key, JSON.stringify([]));
+    }
+    const doses = JSON.parse(localStorage.getItem('medflow_doses') || '[]') as Dose[];
+    const today = localDateKey(new Date());
+    if (doses.some((dose) => !dose.scheduledDate)) {
+      localStorage.setItem('medflow_doses', JSON.stringify(doses.map((dose) => ({
+        ...dose,
+        scheduledDate: dose.scheduledDate || today,
+      }))));
+    }
+    if (localStorage.getItem('medflow_generated_dose_days') === null) {
+      const generated = new Set(doses.map((dose) => `${dose.medId}|${dose.scheduledDate || today}`));
+      localStorage.setItem('medflow_generated_dose_days', JSON.stringify([...generated]));
     }
     if (!localStorage.getItem('medflow_local_profile')) {
       localStorage.setItem('medflow_local_profile', JSON.stringify(EMPTY_LOCAL_PROFILE));
@@ -231,14 +283,14 @@ export class MedFlowDatabase {
     if (this.db) {
       const sql = `
         INSERT OR REPLACE INTO medications
-        (id, name, strength, shape, color, doseQty, unit, scheduleType, fixedTimes, intervalHours,
+        (id, name, strength, shape, color, doseQty, unit, scheduleType, fixedTimes, intervalHours, intervalAnchor,
          cooldownHours, maxPerDay, mealRequired, mealTiming, stockRemaining, stockTotal, lowStockThreshold,
          instruction, mealTag, takenTodayCount, cooldownRemainingSeconds, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       await this.db.run(sql, [
         med.id, med.name, med.strength, med.shape, med.color, med.doseQty, med.unit,
-        med.scheduleType, JSON.stringify(med.fixedTimes || []), med.intervalHours,
+        med.scheduleType, JSON.stringify(med.fixedTimes || []), med.intervalHours, med.intervalAnchor || null,
         med.cooldownHours, med.maxPerDay, med.mealRequired, med.mealTiming,
         med.stockRemaining, med.stockTotal, med.lowStockThreshold,
         med.instruction, med.mealTag, med.takenTodayCount || 0,
@@ -262,6 +314,18 @@ export class MedFlowDatabase {
       })) || [];
     }
     return JSON.parse(localStorage.getItem('medflow_medications') || '[]');
+  }
+
+  async setIntervalAnchor(medId: string, anchor: string): Promise<void> {
+    if (this.db) {
+      await this.db.run('UPDATE medications SET intervalAnchor = ? WHERE id = ?', [anchor, medId]);
+      return;
+    }
+    const medications = JSON.parse(localStorage.getItem('medflow_medications') || '[]') as Medication[];
+    const medication = medications.find((item) => item.id === medId);
+    if (!medication) throw new Error(`Medication ${medId} not found`);
+    medication.intervalAnchor = anchor;
+    localStorage.setItem('medflow_medications', JSON.stringify(medications));
   }
 
   async deleteMedication(medId: string): Promise<void> {
@@ -288,42 +352,97 @@ export class MedFlowDatabase {
     );
   }
 
+  async cancelFuturePendingDoses(medId: string, afterDate: string): Promise<void> {
+    if (this.db) {
+      await this.db.run(
+        "UPDATE doses SET status = 'cancelled' WHERE medId = ? AND scheduledDate > ? AND status = 'pending'",
+        [medId, afterDate]
+      );
+      return;
+    }
+    const doses = JSON.parse(localStorage.getItem('medflow_doses') || '[]') as Dose[];
+    localStorage.setItem('medflow_doses', JSON.stringify(doses.map((dose) =>
+      dose.medId === medId && dose.scheduledDate && dose.scheduledDate > afterDate && dose.status === 'pending'
+        ? { ...dose, status: 'cancelled' }
+        : dose
+    )));
+  }
+
   // ======================= DOSES =======================
   async saveDose(dose: Dose): Promise<void> {
+    const scheduledDate = dose.scheduledDate || localDateKey(new Date());
+    const scheduledAt = dose.scheduledAt || localDateAtMinutes(scheduledDate, dose.scheduledMinutes).toISOString();
     if (this.db) {
       const sql = `
         INSERT OR REPLACE INTO doses
-        (id, medId, scheduledMinutes, originalMinutes, status, takenAtStr, shiftNote, createdAt, updatedAt)
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+        (id, medId, scheduledMinutes, scheduledDate, scheduledAt, originalMinutes, status, takenAtStr, shiftNote, createdAt, updatedAt)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       `;
       await this.db.run(sql, [
-        dose.id, dose.medId, dose.scheduledMinutes, dose.originalMinutes, dose.status,
+        dose.id, dose.medId, dose.scheduledMinutes, scheduledDate, scheduledAt, dose.originalMinutes, dose.status,
         dose.takenAtStr, dose.shiftNote, new Date().toISOString(), new Date().toISOString(),
       ]);
     } else {
       const doses = JSON.parse(localStorage.getItem('medflow_doses') || '[]');
       const idx = doses.findIndex((d: Dose) => d.id === dose.id);
-      if (idx >= 0) doses[idx] = dose;
-      else doses.push(dose);
+      if (idx >= 0) doses[idx] = { ...dose, scheduledDate, scheduledAt };
+      else doses.push({ ...dose, scheduledDate, scheduledAt });
       localStorage.setItem('medflow_doses', JSON.stringify(doses));
     }
   }
 
-  async getDoses(): Promise<Dose[]> {
+  async getDoses(date = localDateKey(new Date())): Promise<Dose[]> {
     if (this.db) {
-      const result = await this.db.query('SELECT * FROM doses ORDER BY scheduledMinutes ASC');
+      const result = await this.db.query(
+        "SELECT * FROM doses WHERE scheduledDate = ? AND status != 'cancelled' ORDER BY scheduledMinutes ASC",
+        [date]
+      );
       return result.values || [];
     }
-    return JSON.parse(localStorage.getItem('medflow_doses') || '[]');
+    const doses = JSON.parse(localStorage.getItem('medflow_doses') || '[]') as Dose[];
+    return doses
+      .filter((dose) => dose.scheduledDate === date && dose.status !== 'cancelled')
+      .sort((a, b) => a.scheduledMinutes - b.scheduledMinutes);
   }
 
   async getDosesByMedication(medId: string): Promise<Dose[]> {
     if (this.db) {
-      const result = await this.db.query('SELECT * FROM doses WHERE medId = ? ORDER BY scheduledMinutes ASC', [medId]);
+      const result = await this.db.query(
+        "SELECT * FROM doses WHERE medId = ? AND scheduledDate = ? AND status != 'cancelled' ORDER BY scheduledMinutes ASC",
+        [medId, localDateKey(new Date())]
+      );
       return result.values || [];
     }
     const doses = JSON.parse(localStorage.getItem('medflow_doses') || '[]');
-    return doses.filter((d: Dose) => d.medId === medId);
+    return doses.filter((d: Dose) => d.medId === medId && d.scheduledDate === localDateKey(new Date()) && d.status !== 'cancelled');
+  }
+
+  async hasGeneratedDoseDay(medId: string, date: string): Promise<boolean> {
+    if (this.db) {
+      const result = await this.db.query(
+        'SELECT 1 FROM generated_dose_days WHERE medId = ? AND scheduledDate = ?',
+        [medId, date]
+      );
+      return Boolean(result.values?.length);
+    }
+    const generated = JSON.parse(localStorage.getItem('medflow_generated_dose_days') || '[]') as string[];
+    return generated.includes(`${medId}|${date}`);
+  }
+
+  async markDoseDayGenerated(medId: string, date: string): Promise<void> {
+    if (this.db) {
+      await this.db.run(
+        'INSERT OR IGNORE INTO generated_dose_days (medId, scheduledDate) VALUES (?, ?)',
+        [medId, date]
+      );
+      return;
+    }
+    const generated = JSON.parse(localStorage.getItem('medflow_generated_dose_days') || '[]') as string[];
+    const key = `${medId}|${date}`;
+    if (!generated.includes(key)) {
+      generated.push(key);
+      localStorage.setItem('medflow_generated_dose_days', JSON.stringify(generated));
+    }
   }
 
   // ======================= VITAL LOGS =======================

@@ -1,0 +1,412 @@
+<!DOCTYPE html>
+<html lang="en" class="scroll-smooth">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>MedFlow — Warm Medication Reminders &amp; Family Care for Android</title>
+  <meta name="description" content="Never miss a dose. MedFlow helps patients and families manage daily medication schedules with gentle reminders, guardian alerts, and comforting peace of mind." />
+  <link rel="icon" type="image/png" href="./logo.png" />
+  <script src="https://cdn.tailwindcss.com"></script>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+  <style>
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    }
+  </style>
+</head>
+<body class="bg-[#fffcf9] text-slate-900 antialiased selection:bg-[#ccfbf1] selection:text-[#0f3d3e]">
+
+  <!-- Sticky Header -->
+  <header class="sticky top-0 z-50 bg-[#fffcf9]/90 backdrop-blur-md border-b border-amber-900/10">
+    <div class="max-w-[960px] mx-auto px-5 py-3.5 flex items-center justify-between gap-3">
+      <a href="#" class="flex items-center gap-2.5 group">
+        <img
+          src="./logo.png"
+          alt="MedFlow Logo"
+          class="w-9 h-9 rounded-xl object-cover shadow-sm bg-[#0d9488]"
+          onerror="this.style.display='none'; document.getElementById('fallback-logo').style.display='flex';"
+        />
+        <div
+          id="fallback-logo"
+          style="display:none;"
+          class="w-9 h-9 rounded-xl bg-gradient-to-br from-[#0d9488] to-[#0f766e] text-white font-extrabold text-lg items-center justify-center shadow-sm"
+        >+</div>
+        <span class="text-lg font-extrabold tracking-tight text-[#0f3d3e]">MedFlow</span>
+        <span class="text-[11px] font-bold uppercase tracking-wider px-2 py-0.5 rounded-full bg-[#ccfbf1] text-[#0f766e]">
+          Android
+        </span>
+      </a>
+
+      <a
+        href="#install-guide"
+        class="inline-flex items-center justify-center bg-[#0d9488] hover:bg-[#0f766e] text-white font-semibold text-xs sm:text-sm px-3.5 py-2 rounded-xl shadow-sm transition-all duration-150"
+      >
+        How to Install
+      </a>
+    </div>
+  </header>
+
+  <!-- Warm Full-Bleed Hero with Centered Layout & Family Caregiving Background -->
+  <section class="relative overflow-hidden bg-gradient-to-b from-[#fffdf9] via-[#fef7ec] to-[#f0fdfa] border-b border-amber-900/10 pt-9 pb-7">
+    <!-- Subtle Translucent Caregiving Photo Overlay -->
+    <div class="absolute inset-x-0 top-0 max-h-[460px] h-full overflow-hidden pointer-events-none z-0">
+      <img
+        src="./feature-guardian.jpg"
+        alt=""
+        aria-hidden="true"
+        class="w-full h-full max-h-[460px] object-cover object-[center_20%] opacity-[0.12]"
+        onerror="this.style.display='none';"
+      />
+    </div>
+
+    <div class="relative z-10 max-w-[960px] mx-auto px-5 text-center flex flex-col items-center">
+      <div class="inline-flex items-center gap-2 bg-white/95 border border-amber-200/80 text-[#0f766e] font-semibold text-xs px-3.5 py-1 rounded-full shadow-sm mb-4">
+        <span class="w-2 h-2 rounded-full bg-amber-500 animate-pulse"></span>
+        Free Direct Android Installer &bull; No Play Store Needed
+      </div>
+
+      <h1 class="text-3xl sm:text-4xl lg:text-[2.6rem] font-extrabold tracking-tight text-slate-900 leading-[1.15] mb-3 max-w-2xl">
+        Never Miss a Dose. <span class="text-[#0d9488]">Stay Connected</span> With Family.
+      </h1>
+
+      <p class="text-sm sm:text-base text-slate-600 leading-relaxed mb-6 max-w-xl">
+        MedFlow brings warmth and simplicity to daily medication care—with gentle reminders, family guardian alerts, and comforting peace of mind.
+      </p>
+
+      <!-- Centered Compact Download + QR Card (580px max width) -->
+      <div class="w-full max-w-[580px] bg-white/95 backdrop-blur-sm border border-amber-200/80 rounded-2xl p-4 sm:p-5 shadow-lg shadow-amber-900/5 text-left">
+        <div class="flex flex-col sm:flex-row items-center gap-4 sm:gap-5">
+          <!-- Download CTA & Metadata -->
+          <div class="flex-1 w-full">
+            <a
+              id="apk-download-btn"
+              href="https://github.com/vmjamtech/MedFlow/releases/download/v1.0.0/MedFlow-v1.0.0.apk"
+              class="flex items-center justify-center gap-2.5 w-full bg-gradient-to-r from-[#0d9488] to-[#0f766e] hover:from-[#0f766e] hover:to-[#0f3d3e] text-white font-bold text-sm sm:text-base px-5 py-3.5 rounded-xl shadow-md shadow-[#0d9488]/25 transition-all duration-150"
+            >
+              <svg class="w-5 h-5 shrink-0" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+                <polyline points="7 10 12 15 17 10"></polyline>
+                <line x1="12" y1="15" x2="12" y2="3"></line>
+              </svg>
+              <span id="download-btn-text">Download MedFlow APK (v1.0.0)</span>
+            </a>
+
+            <div class="flex flex-wrap items-center justify-between gap-2 mt-3 pt-2.5 border-t border-amber-100 text-xs text-slate-600">
+              <span>Version: <strong id="meta-version" class="text-slate-900">v1.0.0</strong></span>
+              <span>Size: <strong id="meta-size" class="text-slate-900">~60 MB</strong></span>
+              <span>Requires: <strong class="text-slate-900">Android 8.0+</strong></span>
+            </div>
+          </div>
+
+          <!-- Compact 110px x 110px QR Code -->
+          <div class="shrink-0 flex flex-col items-center sm:border-l sm:border-amber-100 sm:pl-5">
+            <div class="w-[110px] h-[110px] p-1.5 rounded-xl border border-dashed border-amber-400 bg-[#fffdf9] flex items-center justify-center overflow-hidden">
+              <img
+                id="qr-img"
+                alt="Scan to download MedFlow APK"
+                class="w-full h-full object-contain rounded"
+              />
+            </div>
+            <span class="mt-1.5 text-[11px] font-semibold text-[#0f3d3e] text-center max-w-[120px] leading-tight">Scan with Phone</span>
+          </div>
+        </div>
+      </div>
+    </div>
+  </section>
+
+  <!-- Main Content Container (max-width: 960px) -->
+  <main class="max-w-[960px] mx-auto px-5">
+    <!-- Core Features 2x2 Grid with Compact 150px Photo Banners -->
+    <section class="py-10">
+      <div class="text-center max-w-xl mx-auto mb-7">
+        <span class="inline-block text-[11px] font-bold uppercase tracking-wider text-[#0f766e] bg-[#f0fdfa] border border-[#ccfbf1] px-2.5 py-0.5 rounded-full mb-2">
+          Thoughtful Features
+        </span>
+        <h2 class="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 mb-1.5">
+          Everything You Need for Loving Daily Care
+        </h2>
+        <p class="text-slate-600 text-xs sm:text-sm">
+          Designed to be gentle, clear, and dependable for both loved ones and family caregivers.
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-5">
+        <!-- Feature 1: Gentle Medication Reminders -->
+        <div class="bg-white border border-amber-900/10 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-amber-300/80 transition-all flex flex-col">
+          <div class="relative w-full h-[150px] bg-gradient-to-br from-amber-100 via-[#fef7ec] to-[#ccfbf1] overflow-hidden">
+            <img
+              src="./feature-reminders.jpg"
+              alt="Gentleman holding his smartphone and taking his daily medicine"
+              class="w-full h-[150px] object-cover object-[center_20%]"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+            />
+            <div style="display:none;" class="w-full h-full items-center justify-center px-4 text-center font-bold text-[#0f3d3e] text-base">
+              Gentle Medication Reminders
+            </div>
+            <div class="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none"></div>
+            <span class="absolute bottom-2.5 left-3 inline-flex items-center gap-1.5 bg-white/95 backdrop-blur-sm text-amber-900 text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              On-Time Daily Routine
+            </span>
+          </div>
+          <div class="p-4 sm:p-5 flex-1">
+            <div class="flex items-center gap-2.5 mb-1.5">
+              <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 border border-amber-200/60 flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9"></path>
+                  <path d="M13.73 21a2 2 0 0 1-3.46 0"></path>
+                </svg>
+              </div>
+              <h3 class="text-base font-bold text-slate-900">Gentle Medication Reminders</h3>
+            </div>
+            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Set daily schedules with clear dosage notes and comforting alerts when it is time to take medicine—with simple one-tap confirmation.
+            </p>
+          </div>
+        </div>
+
+        <!-- Feature 2: Family & Guardian Alerts -->
+        <div class="bg-white border border-amber-900/10 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-[#14b8a6]/60 transition-all flex flex-col">
+          <div class="relative w-full h-[150px] bg-gradient-to-br from-[#ccfbf1] via-[#f0fdfa] to-amber-100 overflow-hidden">
+            <img
+              src="./feature-guardian.jpg"
+              alt="Daughter warmly assisting her mother with medicine and water"
+              class="w-full h-[150px] object-cover object-[center_20%]"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+            />
+            <div style="display:none;" class="w-full h-full items-center justify-center px-4 text-center font-bold text-[#0f3d3e] text-base">
+              Family &amp; Guardian Alerts
+            </div>
+            <div class="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none"></div>
+            <span class="absolute bottom-2.5 left-3 inline-flex items-center gap-1.5 bg-white/95 backdrop-blur-sm text-[#0f3d3e] text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#0d9488]"></span>
+              Connected Caregivers
+            </span>
+          </div>
+          <div class="p-4 sm:p-5 flex-1">
+            <div class="flex items-center gap-2.5 mb-1.5">
+              <div class="w-8 h-8 rounded-lg bg-[#f0fdfa] text-[#0f766e] border border-[#ccfbf1] flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"></path>
+                  <circle cx="9" cy="7" r="4"></circle>
+                  <path d="M23 21v-2a4 4 0 0 0-3-3.87"></path>
+                  <path d="M16 3.13a4 4 0 0 1 0 7.75"></path>
+                </svg>
+              </div>
+              <h3 class="text-base font-bold text-slate-900">Family &amp; Guardian Alerts</h3>
+            </div>
+            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Connect daughters, sons, or trusted caregivers so family members are gently notified if a dose is missed or needs a caring check-in.
+            </p>
+          </div>
+        </div>
+
+        <!-- Feature 3: Offline-First & Private -->
+        <div class="bg-white border border-amber-900/10 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-[#14b8a6]/60 transition-all flex flex-col">
+          <div class="relative w-full h-[150px] bg-gradient-to-br from-[#f0fdfa] via-amber-50 to-[#ccfbf1] overflow-hidden">
+            <img
+              src="./feature-offline.jpg"
+              alt="Father holding and reviewing his medical reports and medicine list"
+              class="w-full h-[150px] object-cover object-[center_20%]"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+            />
+            <div style="display:none;" class="w-full h-full items-center justify-center px-4 text-center font-bold text-[#0f3d3e] text-base">
+              Offline-First &amp; Private
+            </div>
+            <div class="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none"></div>
+            <span class="absolute bottom-2.5 left-3 inline-flex items-center gap-1.5 bg-white/95 backdrop-blur-sm text-[#0f3d3e] text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
+              <span class="w-1.5 h-1.5 rounded-full bg-[#0d9488]"></span>
+              Stored Safely on Device
+            </span>
+          </div>
+          <div class="p-4 sm:p-5 flex-1">
+            <div class="flex items-center gap-2.5 mb-1.5">
+              <div class="w-8 h-8 rounded-lg bg-[#f0fdfa] text-[#0f766e] border border-[#ccfbf1] flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <rect x="3" y="11" width="18" height="11" rx="2" ry="2"></rect>
+                  <path d="M7 11V7a5 5 0 0 1 10 0v4"></path>
+                </svg>
+              </div>
+              <h3 class="text-base font-bold text-slate-900">Offline-First &amp; Private</h3>
+            </div>
+            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Medication history, schedules, and personal photos stay safely stored right on your phone—working reliably even without mobile data.
+            </p>
+          </div>
+        </div>
+
+        <!-- Feature 4: Effortless In-App Updates -->
+        <div class="bg-white border border-amber-900/10 rounded-2xl overflow-hidden shadow-sm hover:shadow-md hover:border-amber-300/80 transition-all flex flex-col">
+          <div class="relative w-full h-[150px] bg-gradient-to-br from-amber-100 via-[#fffcf9] to-[#ccfbf1] overflow-hidden">
+            <img
+              src="./feature-updates.jpg"
+              alt="Smiling caregiver and senior parent checking MedFlow together on a smartphone"
+              class="w-full h-[150px] object-cover object-[center_20%]"
+              onerror="this.style.display='none'; this.nextElementSibling.style.display='flex';"
+            />
+            <div style="display:none;" class="w-full h-full items-center justify-center px-4 text-center font-bold text-[#0f3d3e] text-base">
+              Effortless In-App Updates
+            </div>
+            <div class="absolute inset-0 bg-gradient-to-t from-black/30 via-transparent to-transparent pointer-events-none"></div>
+            <span class="absolute bottom-2.5 left-3 inline-flex items-center gap-1.5 bg-white/95 backdrop-blur-sm text-amber-900 text-[11px] font-bold px-2.5 py-0.5 rounded-full shadow-sm">
+              <span class="w-1.5 h-1.5 rounded-full bg-amber-500"></span>
+              Always Up to Date
+            </span>
+          </div>
+          <div class="p-4 sm:p-5 flex-1">
+            <div class="flex items-center gap-2.5 mb-1.5">
+              <div class="w-8 h-8 rounded-lg bg-amber-50 text-amber-700 border border-amber-200/60 flex items-center justify-center shrink-0">
+                <svg class="w-4 h-4" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+                  <polyline points="23 4 23 10 17 10"></polyline>
+                  <path d="M20.49 15a9 9 0 1 1-2.12-9.36L23 10"></path>
+                </svg>
+              </div>
+              <h3 class="text-base font-bold text-slate-900">Effortless In-App Updates</h3>
+            </div>
+            <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+              Check for new MedFlow improvements right inside the app and update smoothly while keeping all saved schedules and logs safe.
+            </p>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <!-- 3-Step Installation Guide -->
+    <section id="install-guide" class="py-8">
+      <div class="text-center max-w-xl mx-auto mb-6">
+        <span class="inline-block text-[11px] font-bold uppercase tracking-wider text-amber-800 bg-amber-100/80 px-2.5 py-0.5 rounded-full mb-2">
+          Quick Setup
+        </span>
+        <h2 class="text-xl sm:text-2xl font-extrabold tracking-tight text-slate-900 mb-1.5">
+          How to Install MedFlow on Android
+        </h2>
+        <p class="text-slate-600 text-xs sm:text-sm">
+          Because MedFlow is shared directly outside the Play Store, installation takes less than a minute:
+        </p>
+      </div>
+
+      <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
+        <div class="bg-white border border-amber-900/10 rounded-2xl p-5 shadow-sm">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-[#0d9488] to-[#0f766e] text-white font-extrabold text-xs flex items-center justify-center mb-3 shadow-sm">
+            1
+          </div>
+          <h3 class="text-sm sm:text-base font-bold text-slate-900 mb-1">Download the APK File</h3>
+          <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+            Tap <strong class="text-slate-800">Download MedFlow APK</strong> above and wait for <strong id="step-filename" class="text-slate-800">MedFlow-v1.0.0.apk</strong> to finish downloading.
+          </p>
+        </div>
+
+        <div class="bg-white border border-amber-900/10 rounded-2xl p-5 shadow-sm">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-[#0d9488] to-[#0f766e] text-white font-extrabold text-xs flex items-center justify-center mb-3 shadow-sm">
+            2
+          </div>
+          <h3 class="text-sm sm:text-base font-bold text-slate-900 mb-1">Allow Browser Installs</h3>
+          <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+            Open the downloaded file. If prompted by Android, tap <strong class="text-slate-800">Settings &rarr; Allow from this source</strong>, then tap <strong class="text-slate-800">Install</strong>.
+          </p>
+        </div>
+
+        <div class="bg-white border border-amber-900/10 rounded-2xl p-5 shadow-sm">
+          <div class="w-8 h-8 rounded-full bg-gradient-to-br from-[#0d9488] to-[#0f766e] text-white font-extrabold text-xs flex items-center justify-center mb-3 shadow-sm">
+            3
+          </div>
+          <h3 class="text-sm sm:text-base font-bold text-slate-900 mb-1">Open &amp; Add Your Schedule</h3>
+          <p class="text-xs sm:text-sm text-slate-600 leading-relaxed">
+            Launch <strong class="text-slate-800">MedFlow</strong> from your home screen, accept the Terms of Use, and set up your daily medication routine.
+          </p>
+        </div>
+      </div>
+
+      <div class="mt-4 bg-[#fef7ec] border border-amber-200/80 rounded-xl p-3.5 text-xs sm:text-sm text-amber-950 leading-relaxed">
+        <strong class="text-[#0f3d3e]">First-Time Sideload Tip:</strong> If Google Play Protect shows a standard notice for apps downloaded from a browser, tap <strong>More details &rarr; Install anyway</strong>. All official MedFlow releases are digitally signed by <strong>VMJAMTech</strong> so future updates install smoothly without losing any saved records.
+      </div>
+    </section>
+  </main>
+
+  <!-- Footer -->
+  <footer class="border-t border-amber-900/10 bg-[#fffdf9] py-7 mt-4 text-xs text-slate-600">
+    <div class="max-w-[960px] mx-auto px-5">
+      <div class="bg-white border border-amber-900/10 rounded-xl p-3.5 mb-4 text-xs leading-relaxed text-slate-600">
+        <strong class="text-slate-800">Medical Disclaimer:</strong> MedFlow is a personal medication reminder and adherence tracking tool designed to support daily family routines. It does not provide medical advice, diagnosis, or treatment. Always consult a qualified healthcare professional regarding your prescriptions.
+      </div>
+
+      <div class="flex flex-col sm:flex-row items-center justify-between gap-2">
+        <div>&copy; <span id="year"></span> <strong class="text-slate-800">VMJAMTech</strong>. Made with care for families.</div>
+        <div class="flex items-center gap-4">
+          <a href="https://github.com/vmjamtech/MedFlow/releases" target="_blank" rel="noopener" class="font-semibold text-[#0f766e] hover:underline">
+            All Releases
+          </a>
+          <a href="https://github.com/vmjamtech/MedFlow" target="_blank" rel="noopener" class="font-semibold text-[#0f766e] hover:underline">
+            GitHub
+          </a>
+        </div>
+      </div>
+    </div>
+  </footer>
+
+  <!-- Easy Version Config (Update ONLY these values when releasing v1.0.1+) -->
+  <script>
+    const MEDFLOW_RELEASE = {
+      version: "v1.0.0",
+      fileName: "MedFlow-v1.0.0.apk",
+      fileSize: "~60 MB",
+      downloadUrl: "https://github.com/vmjamtech/MedFlow/releases/download/v1.0.0/MedFlow-v1.0.0.apk"
+    };
+
+    try {
+      const downloadBtn = document.getElementById("apk-download-btn");
+      const downloadBtnText = document.getElementById("download-btn-text");
+      const metaVersion = document.getElementById("meta-version");
+      const metaSize = document.getElementById("meta-size");
+      const stepFilename = document.getElementById("step-filename");
+      const yearEl = document.getElementById("year");
+      const qrImg = document.getElementById("qr-img");
+
+      if (downloadBtn) downloadBtn.href = MEDFLOW_RELEASE.downloadUrl;
+      if (downloadBtnText) downloadBtnText.textContent = `Download MedFlow APK (${MEDFLOW_RELEASE.version})`;
+      if (metaVersion) metaVersion.textContent = MEDFLOW_RELEASE.version;
+      if (metaSize) metaSize.textContent = MEDFLOW_RELEASE.fileSize;
+      if (stepFilename) stepFilename.textContent = MEDFLOW_RELEASE.fileName;
+      if (yearEl) yearEl.textContent = new Date().getFullYear();
+
+      if (qrImg) {
+        const fallbackQr = "data:image/svg+xml;utf8," + encodeURIComponent(`
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 120 120">
+            <rect width="120" height="120" rx="8" fill="#fffdf9"/>
+            <g fill="#0f3d3e">
+              <rect x="12" y="12" width="30" height="30" rx="4"/>
+              <rect x="17" y="17" width="20" height="20" rx="2" fill="#fffdf9"/>
+              <rect x="22" y="22" width="10" height="10" rx="1"/>
+              <rect x="78" y="12" width="30" height="30" rx="4"/>
+              <rect x="83" y="17" width="20" height="20" rx="2" fill="#fffdf9"/>
+              <rect x="88" y="22" width="10" height="10" rx="1"/>
+              <rect x="12" y="78" width="30" height="30" rx="4"/>
+              <rect x="17" y="83" width="20" height="20" rx="2" fill="#fffdf9"/>
+              <rect x="22" y="88" width="10" height="10" rx="1"/>
+              <rect x="50" y="16" width="8" height="8"/><rect x="62" y="24" width="8" height="14"/>
+              <rect x="16" y="50" width="14" height="8"/><rect x="36" y="56" width="12" height="12"/>
+              <rect x="54" y="52" width="14" height="14" rx="3" fill="#0d9488"/>
+              <rect x="76" y="50" width="10" height="18"/><rect x="94" y="56" width="12" height="12"/>
+              <rect x="52" y="76" width="12" height="10"/><rect x="72" y="82" width="14" height="14"/>
+              <rect x="92" y="78" width="14" height="10"/><rect x="54" y="96" width="20" height="10"/>
+              <rect x="86" y="98" width="20" height="10"/>
+            </g>
+          </svg>
+        `);
+        qrImg.src = fallbackQr;
+        const liveQr = new Image();
+        liveQr.onload = function () {
+          qrImg.src = liveQr.src;
+        };
+        liveQr.src =
+          "https://api.qrserver.com/v1/create-qr-code/?size=200x200&color=0f3d3e&data=" +
+          encodeURIComponent(MEDFLOW_RELEASE.downloadUrl);
+      }
+    } catch (err) {
+      console.error("Failed to initialize MedFlow release config:", err);
+    }
+  </script>
+</body>
+</html>

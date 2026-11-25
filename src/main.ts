@@ -9,6 +9,8 @@ import { db, EMPTY_LOCAL_PROFILE } from './db/database';
 import type { LocalProfile } from './db/database';
 import type { Medication, Dose, VitalLog, IntakeHistory } from './db/schema';
 import { SchedulerService } from './services/scheduler';
+import { NotificationService } from './services/notifications';
+import { localDateAtMinutes, localDateKey } from './utils/localDate';
 import { GuardianSyncService } from './services/guardianSync';
 import { getVitalStatus } from './utils/clinical';
 import { renderPillSVG, getPillBgClass } from './utils/pillSvg';
@@ -86,6 +88,44 @@ let patientCodeLookup: Record<string, any> = {};
 let calendarTargetField: string | null = null; // Track which field is being edited
 let calendarDisplayDate: string = '2026-11-18'; // Current month being displayed
 let guardianEvaluationInterval: number | null = null;
+let currentDoseDate = '';
+let doseRollover: Promise<void> | null = null;
+let reminderReady = false;
+let reminderQueue: Promise<void> = Promise.resolve();
+
+function showReminderWarning(message: string): void {
+  const warning = document.getElementById('reminder-warning');
+  if (!warning) return;
+  warning.textContent = message;
+  warning.classList.toggle('hidden', !message);
+}
+
+function syncMedicationReminders(requestPermission = false): Promise<void> {
+  if (!reminderReady) return Promise.resolve();
+  reminderQueue = reminderQueue.then(async () => {
+    try {
+      await NotificationService.synchronize(await db.getMedications(), requestPermission);
+      showReminderWarning('');
+    } catch (error) {
+      console.error('Unable to schedule medication reminders', error);
+      const reason = error instanceof Error ? error.message : String(error);
+      showReminderWarning(`Medication reminders unavailable: ${reason}. Use a separate reminder.`);
+    }
+  });
+  return reminderQueue;
+}
+
+async function initializeMedicationReminders(): Promise<void> {
+  if (!NotificationService.isAvailable()) return;
+  try {
+    await NotificationService.initialize();
+    reminderReady = true;
+    await syncMedicationReminders(true);
+  } catch (error) {
+    console.error('Unable to initialize medication reminders', error);
+    showReminderWarning('Medication reminders could not be initialized. Use a separate reminder.');
+  }
+}
 
 function toRuntimeGuardianLink(link: {
   id: string;
@@ -293,9 +333,9 @@ function createShell() {
             </div>
             <div>
               <div class="flex items-center gap-1.5 mb-0.5">
-                <span class="text-sm font-black text-slate-900">${timeStr}</span>
+                <span id="header-clock" class="text-sm font-black text-slate-900">${timeStr}</span>
                 <span class="text-xs font-semibold text-slate-500">•</span>
-                <span class="text-xs font-semibold text-slate-600">${dayStr}</span>
+                <span id="header-date" class="text-xs font-semibold text-slate-600">${dayStr}</span>
               </div>
               <div class="flex items-center justify-between gap-3">
                 <div>
@@ -309,6 +349,7 @@ function createShell() {
             </div>
           </div>
         </header>
+        <div id="reminder-warning" role="alert" class="hidden shrink-0 bg-amber-100 px-4 py-2 text-xs font-bold text-amber-900"></div>
 
         <!-- Main Content (Sole Scrollable Region) -->
         <main class="flex-1 overflow-y-auto overflow-x-hidden scrollbar-hide phone-scroll px-4 pt-4 pb-28" data-pull-scroll>
@@ -393,6 +434,7 @@ async function initApp() {
     state.profile = await db.getLocalProfile();
     state.myPatientName = state.profile.name;
     await reconcileMissingMedicationSchedules();
+    await initializeMedicationReminders();
     await initializeGuardianSyncState();
     await checkForAppUpdate();
     startGuardianEvaluationInterval();
@@ -400,6 +442,7 @@ async function initApp() {
     renderApp();
   } catch (error) {
     console.error('❌ Init failed:', error);
+    showReminderWarning('MedFlow could not initialize medication schedules. Use a separate reminder.');
   }
 }
 
@@ -446,8 +489,42 @@ function startGuardianEvaluationInterval() {
     window.clearInterval(guardianEvaluationInterval);
   }
   guardianEvaluationInterval = window.setInterval(() => {
+    if (localDateKey(new Date()) !== currentDoseDate) {
+      void refreshDoseDay().catch((error) => console.error('Medication schedule refresh failed', error));
+    }
+    updateHeader();
     void syncOverdueGuardianAlerts().then(() => updateGuardianAlertDot());
   }, 60_000);
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) return;
+    if (localDateKey(new Date()) !== currentDoseDate) {
+      void refreshDoseDay().catch((error) => console.error('Medication schedule refresh failed', error));
+    } else {
+      void syncMedicationReminders();
+    }
+  });
+}
+
+async function refreshDoseDay(): Promise<void> {
+  if (doseRollover) return doseRollover;
+  doseRollover = (async () => {
+    try {
+      state.medications = await db.getMedications();
+      await reconcileMissingMedicationSchedules();
+      await syncMedicationReminders();
+      await syncCurrentGuardianDoseFeed();
+      renderApp();
+    } catch (error) {
+      console.error('Unable to roll over medication schedules', error);
+      showToast('Unable to refresh today’s medication schedule', 'alert');
+      throw error;
+    }
+  })();
+  try {
+    await doseRollover;
+  } finally {
+    doseRollover = null;
+  }
 }
 
 function setupPullToRefresh() {
@@ -671,6 +748,7 @@ async function loadSampleDemoData() {
   state.doses = await db.getDoses();
   state.vitalLogs = await db.getVitalLogs();
   state.intakeHistory = await db.getIntakeHistory(100);
+  await syncMedicationReminders();
 
   if (monitoredPatients.length === 0) {
     monitoredPatients = [
@@ -723,22 +801,9 @@ async function loadSampleDemoData() {
 }
 
 async function reconcileMissingMedicationSchedules() {
-  const scheduledMedicationIds = new Set(state.doses.map((dose) => dose.medId));
-  const recoveredDoses: Dose[] = [];
-
-  for (const med of state.medications) {
-    if (med.scheduleType === 'prn' || scheduledMedicationIds.has(med.id)) continue;
-    const doses = await SchedulerService.calculateDayDoses(med);
-    for (const dose of doses) {
-      await db.saveDose(dose);
-      recoveredDoses.push(dose);
-    }
-  }
-
-  if (recoveredDoses.length > 0) {
-    state.doses.push(...recoveredDoses);
-    state.doses.sort((a, b) => a.scheduledMinutes - b.scheduledMinutes);
-  }
+  const date = localDateKey(new Date());
+  state.doses = await SchedulerService.reconcileDay(state.medications, date);
+  currentDoseDate = date;
 }
 
 // ==========================================
@@ -849,6 +914,7 @@ function showToast(message: string, type: 'success' | 'warning' | 'alert' = 'suc
 
 async function takeScheduledDose(doseId: string, simulatedLateMinutes?: number) {
   if (simulatedLateMinutes !== undefined && !state.demoModeEnabled) return;
+  if (localDateKey(new Date()) !== currentDoseDate) await refreshDoseDay();
   const dose = state.doses.find(d => d.id === doseId);
   if (!dose || dose.status === 'taken') return;
 
@@ -870,22 +936,24 @@ async function takeScheduledDose(doseId: string, simulatedLateMinutes?: number) 
   med.stockRemaining = Math.max(0, med.stockRemaining - med.doseQty);
 
   if (med.scheduleType === 'interval' && lateOffsetMinutes > 0) {
+    const anchor = localDateAtMinutes(currentDoseDate, takenAtMinutes);
+    med.intervalAnchor = anchor.toISOString();
+    await db.cancelFuturePendingDoses(med.id, currentDoseDate);
     const nextDoses = state.doses.filter(
       d => d.medId === med.id && d.status === 'pending' && d.scheduledMinutes > dose.scheduledMinutes
     );
     for (const [index, nextDose] of nextDoses.entries()) {
-      const proposedMinutes =
-        takenAtMinutes + (med.intervalHours || 8) * 60 * (index + 1);
-      nextDose.scheduledMinutes = Math.min(proposedMinutes, 1439);
-      nextDose.shiftNote = proposedMinutes > 1439
-        ? `Shift capped at 23:59 for today`
-        : `Auto-shifted +${formatLateDuration(lateOffsetMinutes)} to maintain ${med.intervalHours}h spacing`;
+      const nextTime = new Date(anchor.getTime() + (med.intervalHours || 8) * 60 * 60 * 1000 * (index + 1));
+      nextDose.scheduledDate = localDateKey(nextTime);
+      nextDose.scheduledAt = nextTime.toISOString();
+      nextDose.scheduledMinutes = nextTime.getHours() * 60 + nextTime.getMinutes();
+      nextDose.shiftNote = `Auto-shifted +${formatLateDuration(lateOffsetMinutes)} to maintain ${med.intervalHours}h spacing`;
       await db.saveDose(nextDose);
     }
   }
 
   // Create intake history entry
-  const dateStr = now.toISOString().split('T')[0];
+  const dateStr = localDateKey(now);
   const dateLabel = `${now.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}, ${dose.takenAtStr}`;
   const timingStatus = lateOffsetMinutes > 0
     ? `Late (+${formatLateDuration(lateOffsetMinutes)})`
@@ -909,6 +977,8 @@ async function takeScheduledDose(doseId: string, simulatedLateMinutes?: number) 
 
   await db.saveDose(dose);
   await db.saveMedication(med);
+  state.doses = await db.getDoses(currentDoseDate);
+  await syncMedicationReminders();
   await syncCurrentGuardianDoseFeed();
   await syncOverdueGuardianAlerts();
   
@@ -920,14 +990,22 @@ async function takeScheduledDose(doseId: string, simulatedLateMinutes?: number) 
 }
 
 async function snoozeDose(doseId: string) {
+  if (localDateKey(new Date()) !== currentDoseDate) await refreshDoseDay();
   const dose = state.doses.find(d => d.id === doseId);
   if (!dose || dose.status !== 'pending') return;
   
   const med = state.medications.find(m => m.id === dose.medId);
-  dose.scheduledMinutes += 15;
+  const snoozedAt = new Date(
+    (dose.scheduledAt ? new Date(dose.scheduledAt) : localDateAtMinutes(currentDoseDate, dose.scheduledMinutes)).getTime() + 15 * 60 * 1000
+  );
+  dose.scheduledDate = localDateKey(snoozedAt);
+  dose.scheduledAt = snoozedAt.toISOString();
+  dose.scheduledMinutes = snoozedAt.getHours() * 60 + snoozedAt.getMinutes();
   dose.shiftNote = 'Snoozed +15 mins';
   
   await db.saveDose(dose);
+  state.doses = await db.getDoses(currentDoseDate);
+  await syncMedicationReminders();
   await syncCurrentGuardianDoseFeed();
   showToast(`⏰ Snoozed ${med?.name} to ${formatMinutesTo12h(dose.scheduledMinutes)}`);
   renderApp();
@@ -1026,7 +1104,7 @@ async function editMedication(medId: string) {
   const unitSelect = document.getElementById('add-med-unit') as HTMLSelectElement;
   const stockInput = document.getElementById('add-med-stock') as HTMLInputElement;
   const shapeSelect = document.getElementById('add-med-shape') as HTMLSelectElement;
-  const colorSelect = document.getElementById('add-med-color') as HTMLSelectElement;
+  const colorInput = document.querySelector<HTMLInputElement>(`input[name="add-med-color"][value="${med.color}"]`);
   const mealRequired = document.getElementById('add-meal-required') as HTMLSelectElement;
   const mealTiming = document.getElementById('add-meal-timing') as HTMLSelectElement;
   const scheduleType = document.getElementById('add-schedule-type') as HTMLSelectElement;
@@ -1037,7 +1115,7 @@ async function editMedication(medId: string) {
   if (unitSelect) unitSelect.value = med.unit;
   if (stockInput) stockInput.value = String(med.stockRemaining);
   if (shapeSelect) shapeSelect.value = med.shape;
-  if (colorSelect) colorSelect.value = med.color;
+  if (colorInput) colorInput.checked = true;
   if (mealRequired) mealRequired.value = med.mealRequired;
   if (mealTiming && med.mealTiming) mealTiming.value = med.mealTiming;
   if (scheduleType) {
@@ -1078,6 +1156,7 @@ async function deleteMedication(medId: string) {
     state.medications = state.medications.filter(m => m.id !== medId);
     state.doses = state.doses.filter(d => d.medId !== medId);
     await db.deleteMedication(medId);
+    await syncMedicationReminders();
     await syncCurrentGuardianDoseFeed();
     showToast(`🗑️ Deleted ${med.name}`);
     renderApp();
@@ -1298,16 +1377,16 @@ function openAddMedModal() {
             <option value="capsule">Capsule</option>
           </select>
         </div>
-        <div>
-          <label class="block text-xs font-bold text-slate-900 mb-1.5 uppercase tracking-wide">Color</label>
-          <select id="add-med-color" class="w-full bg-white border border-slate-300 rounded-lg px-3.5 py-2.5 text-xs font-semibold text-slate-900 focus:outline-none focus:border-teal-500 focus:ring-1 focus:ring-teal-500/20">
-            <option value="teal">Teal</option>
-            <option value="amber">Amber</option>
-            <option value="rose">Coral Red</option>
-            <option value="blue">Sky Blue</option>
-            <option value="indigo">Indigo</option>
-          </select>
-        </div>
+        <fieldset class="col-span-2 min-w-0">
+          <legend class="block text-xs font-bold text-slate-900 mb-1.5 uppercase tracking-wide">Color</legend>
+          <div class="grid grid-cols-5 gap-1">
+            <label class="min-w-0"><input type="radio" name="add-med-color" value="teal" class="peer sr-only" checked /><span class="flex h-full min-h-[44px] flex-col min-[400px]:flex-row items-center justify-center gap-0.5 rounded border border-slate-300 bg-white px-1 py-1 text-[10px] font-semibold text-slate-900 peer-checked:border-teal-600 peer-checked:ring-1 peer-checked:ring-teal-600 peer-focus-visible:ring-2"><span class="h-3 w-3 shrink-0 rounded-full bg-teal-600"></span><span class="min-w-0 text-center leading-tight">Teal</span></span></label>
+            <label class="min-w-0"><input type="radio" name="add-med-color" value="amber" class="peer sr-only" /><span class="flex h-full min-h-[44px] flex-col min-[400px]:flex-row items-center justify-center gap-0.5 rounded border border-slate-300 bg-white px-1 py-1 text-[10px] font-semibold text-slate-900 peer-checked:border-teal-600 peer-checked:ring-1 peer-checked:ring-teal-600 peer-focus-visible:ring-2"><span class="h-3 w-3 shrink-0 rounded-full bg-amber-600"></span><span class="min-w-0 text-center leading-tight">Amber</span></span></label>
+            <label class="min-w-0"><input type="radio" name="add-med-color" value="indigo" class="peer sr-only" /><span class="flex h-full min-h-[44px] flex-col min-[400px]:flex-row items-center justify-center gap-0.5 rounded border border-slate-300 bg-white px-1 py-1 text-[10px] font-semibold text-slate-900 peer-checked:border-teal-600 peer-checked:ring-1 peer-checked:ring-teal-600 peer-focus-visible:ring-2"><span class="h-3 w-3 shrink-0 rounded-full bg-indigo-600"></span><span class="min-w-0 text-center leading-tight">Indigo</span></span></label>
+            <label class="min-w-0"><input type="radio" name="add-med-color" value="rose" class="peer sr-only" /><span class="flex h-full min-h-[44px] flex-col min-[400px]:flex-row items-center justify-center gap-0.5 rounded border border-slate-300 bg-white px-1 py-1 text-[10px] font-semibold text-slate-900 peer-checked:border-teal-600 peer-checked:ring-1 peer-checked:ring-teal-600 peer-focus-visible:ring-2"><span class="h-3 w-3 shrink-0 rounded-full bg-rose-600"></span><span class="min-w-0 text-center leading-tight">Coral Red</span></span></label>
+            <label class="min-w-0"><input type="radio" name="add-med-color" value="blue" class="peer sr-only" /><span class="flex h-full min-h-[44px] flex-col min-[400px]:flex-row items-center justify-center gap-0.5 rounded border border-slate-300 bg-white px-1 py-1 text-[10px] font-semibold text-slate-900 peer-checked:border-teal-600 peer-checked:ring-1 peer-checked:ring-teal-600 peer-focus-visible:ring-2"><span class="h-3 w-3 shrink-0 rounded-full bg-sky-600"></span><span class="min-w-0 text-center leading-tight">Sky Blue</span></span></label>
+          </div>
+        </fieldset>
       </div>
 
       <div class="grid grid-cols-3 gap-2">
@@ -1433,7 +1512,7 @@ function handleAddMedicationSubmit(e: Event) {
   const name = (document.getElementById('add-med-name') as HTMLInputElement).value.trim();
   const strength = (document.getElementById('add-med-strength') as HTMLInputElement).value.trim();
   const shape = (document.getElementById('add-med-shape') as HTMLSelectElement).value;
-  const color = (document.getElementById('add-med-color') as HTMLSelectElement).value;
+  const color = form.querySelector<HTMLInputElement>('input[name="add-med-color"]:checked')!.value;
   const doseQty = parseFloat((document.getElementById('add-med-qty') as HTMLInputElement).value) || 1;
   const unit = (document.getElementById('add-med-unit') as HTMLSelectElement).value as Medication['unit'];
   const stockTotal = parseFloat((document.getElementById('add-med-stock') as HTMLInputElement).value) || 30;
@@ -1529,6 +1608,7 @@ async function clearDemoData() {
   state.doses = await db.getDoses();
   state.vitalLogs = await db.getVitalLogs();
   state.intakeHistory = await db.getIntakeHistory(100);
+  await syncMedicationReminders();
 
   const isDemoRequest = (request: any) =>
     String(request?.id || '').startsWith('request-demo-');
@@ -1561,18 +1641,35 @@ async function clearDemoData() {
 }
 
 async function submitAddMedication(med: Medication, isEdit: boolean) {
+  if (localDateKey(new Date()) !== currentDoseDate) await refreshDoseDay();
+  const previous = state.medications.find((item) => item.id === med.id);
+  const scheduleChanged = Boolean(previous) && (
+    previous?.scheduleType !== med.scheduleType ||
+    previous?.intervalHours !== med.intervalHours ||
+    JSON.stringify(previous?.fixedTimes || []) !== JSON.stringify(med.fixedTimes || [])
+  );
+  if (med.scheduleType === 'interval') {
+    const sameSchedule = previous?.scheduleType === 'interval' &&
+      previous.intervalHours === med.intervalHours &&
+      previous.fixedTimes?.[0] === med.fixedTimes?.[0];
+    med.intervalAnchor = sameSchedule && previous.intervalAnchor
+      ? previous.intervalAnchor
+      : localDateAtMinutes(currentDoseDate, SchedulerService.parseTimeToMinutes(med.fixedTimes?.[0] || '08:00')).toISOString();
+  }
   const existingDoses = state.doses.filter((dose) => dose.medId === med.id);
-  const generatedDoses = await SchedulerService.calculateDayDoses(med);
+  const generatedDoses = await SchedulerService.calculateDayDoses(med, currentDoseDate);
   const matchedDoseIds = new Set<string>();
   const scheduledDoses = generatedDoses.map((generated) => {
     const existing = existingDoses.find(
       (dose) =>
         !matchedDoseIds.has(dose.id) &&
-        dose.originalMinutes === generated.originalMinutes
+        (dose.scheduledAt === generated.scheduledAt || dose.originalMinutes === generated.originalMinutes)
     );
     if (!existing) return generated;
     matchedDoseIds.add(existing.id);
-    return { ...generated, status: existing.status, takenAtStr: existing.takenAtStr, shiftNote: existing.shiftNote };
+    return { ...generated, id: existing.id, scheduledMinutes: existing.scheduledMinutes,
+      scheduledDate: existing.scheduledDate, scheduledAt: existing.scheduledAt,
+      status: existing.status, takenAtStr: existing.takenAtStr, shiftNote: existing.shiftNote };
   });
   for (const existing of existingDoses) {
     if (existing.status === 'taken' && !matchedDoseIds.has(existing.id)) {
@@ -1581,8 +1678,14 @@ async function submitAddMedication(med: Medication, isEdit: boolean) {
   }
 
   await db.saveMedication(med);
-  await db.deleteDosesByMedication(med.id);
+  if (scheduleChanged) await db.cancelFuturePendingDoses(med.id, currentDoseDate);
+  for (const existing of existingDoses) {
+    if (!matchedDoseIds.has(existing.id) && existing.status !== 'taken') {
+      await db.saveDose({ ...existing, status: 'cancelled' });
+    }
+  }
   for (const dose of scheduledDoses) await db.saveDose(dose);
+  await db.markDoseDayGenerated(med.id, currentDoseDate);
 
   if (isEdit) {
     state.medications = state.medications.map((medication) =>
@@ -1591,10 +1694,8 @@ async function submitAddMedication(med: Medication, isEdit: boolean) {
   } else {
     state.medications.push(med);
   }
-  state.doses = state.doses
-    .filter((dose) => dose.medId !== med.id)
-    .concat(scheduledDoses)
-    .sort((a, b) => a.scheduledMinutes - b.scheduledMinutes);
+  state.doses = await db.getDoses(currentDoseDate);
+  await syncMedicationReminders(true);
   await syncCurrentGuardianDoseFeed();
 
   closeModal();
@@ -1766,6 +1867,11 @@ function renderApp() {
 }
 
 function updateHeader() {
+  const now = new Date();
+  const clock = document.getElementById('header-clock');
+  const date = document.getElementById('header-date');
+  if (clock) clock.textContent = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: true }).toUpperCase();
+  if (date) date.textContent = now.toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' });
   const today = state.doses.filter(d => d.status !== 'skipped');
   const taken = today.filter(d => d.status === 'taken').length;
   const headerTitle = document.getElementById('header-title');

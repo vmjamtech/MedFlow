@@ -18,6 +18,7 @@ export interface Medication {
   
   // Interval-based (auto-shifts if taken late)
   intervalHours?: number; // 6, 8, 12 hours
+  intervalAnchor?: string;
   
   // As Needed (PRN) with safety cooldown
   cooldownHours?: number; // 4, 6, 8, 24 hour cooldown
@@ -48,8 +49,10 @@ export interface Dose {
   id: string;
   medId: string; // Foreign key to Medication
   scheduledMinutes: number; // Minutes since midnight (0-1440)
+  scheduledDate?: string; // Local calendar date, YYYY-MM-DD
+  scheduledAt?: string;
   originalMinutes: number; // Original time before late-dose shifts
-  status: 'pending' | 'taken' | 'skipped' | 'missed';
+  status: 'pending' | 'taken' | 'skipped' | 'missed' | 'cancelled';
   takenAtStr?: string; // e.g., "02:15 PM"
   shiftNote?: string; // e.g., "Auto-shifted +90m to keep 8h spacing"
   createdAt?: Date;

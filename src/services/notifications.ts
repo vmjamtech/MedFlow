@@ -1,112 +1,133 @@
-/**
- * Notifications service: Local Android exact alarms and lock-screen alerts
- * Uses @capacitor/local-notifications for SCHEDULE_EXACT_ALARM permission
- */
-
-import { LocalNotifications } from '@capacitor/local-notifications';
 import { Capacitor } from '@capacitor/core';
+import { LocalNotifications } from '@capacitor/local-notifications';
+import type { LocalNotificationSchema } from '@capacitor/local-notifications';
+import type { Dose, Medication } from '../db/schema';
+import { db } from '../db/database';
+import { localDateAtMinutes, localDateKey } from '../utils/localDate';
+import { SchedulerService } from './scheduler';
+
+const CHANNEL_ID = 'medication-reminders';
+const REMINDER_SOURCE = 'medflow-medication-reminder';
+
+function notificationId(doseId: string): number {
+  let hash = 2166136261;
+  for (let index = 0; index < doseId.length; index++) {
+    hash = Math.imul(hash ^ doseId.charCodeAt(index), 16777619);
+  }
+  return (hash >>> 1) || 1;
+}
+
+function scheduledTime(dose: Dose): Date {
+  if (!dose.scheduledDate) throw new Error('A medication dose has no scheduled date');
+  const date = dose.scheduledAt
+    ? new Date(dose.scheduledAt)
+    : localDateAtMinutes(dose.scheduledDate, dose.scheduledMinutes);
+  if (!Number.isFinite(date.getTime())) throw new Error('A medication dose has an invalid scheduled time');
+  return date;
+}
 
 export class NotificationService {
-  private static isNativePlatform = !Capacitor.isNativePlatform || Capacitor.getPlatform() !== 'web';
-
-  /**
-   * Request notification permissions (Android 13+)
-   */
-  static async requestPermissions(): Promise<boolean> {
-    if (!this.isNativePlatform) {
-      // Browser mode: notifications not available
-      console.log('ℹ️ Notifications not available in browser mode');
-      return false;
-    }
-
-    try {
-      const result = await LocalNotifications.requestPermissions();
-      return result.display === 'granted';
-    } catch (err) {
-      console.warn('Notification permission request failed', err);
-      return false;
-    }
+  static isAvailable(): boolean {
+    return Capacitor.isNativePlatform() && Capacitor.getPlatform() === 'android';
   }
 
-  /**
-   * Schedule exact alarm for medication reminder
-   * Shows on lock screen with TAKE_NOW and SNOOZE_15 action buttons
-   */
-  static async scheduleExactAlarm(options: {
-    id: number;
-    medName: string;
-    strength: string;
-    doseQty: string;
-    scheduleTime: string; // "08:00 AM"
-    scheduledMinutes: number; // minutes since midnight
-  }): Promise<void> {
-    try {
-      const now = new Date();
-      const scheduledDate = new Date();
-      const [h, m] = options.scheduleTime.split(':').map(Number);
-      scheduledDate.setHours(h, m, 0, 0);
-
-      // If scheduled time is in the past, skip (already missed)
-      if (scheduledDate <= now) return;
-
-      await LocalNotifications.schedule({
-        notifications: [
-          {
-            id: options.id,
-            title: `💊 ${options.medName} ${options.strength}`,
-            body: `Take ${options.doseQty} • Scheduled ${options.scheduleTime}`,
-            schedule: { at: scheduledDate },
-            smallIcon: 'ic_stat_notification',
-            largeBody: `${options.medName} ${options.strength}\nTake ${options.doseQty}\nScheduled: ${options.scheduleTime}`,
-            actionTypeId: 'med_reminder',
-            summaryText: 'MedFlow Medication Reminder',
-          },
-        ],
-      });
-    } catch (err) {
-      console.warn('Failed to schedule exact alarm', err);
-    }
-  }
-
-  /**
-   * Cancel scheduled notification
-   */
-  static async cancelNotification(id: number): Promise<void> {
-    try {
-      await LocalNotifications.cancel({ notifications: [{ id }] });
-    } catch (err) {
-      console.warn('Failed to cancel notification', err);
-    }
-  }
-
-  /**
-   * Check if notifications are enabled on device
-   */
-  static async isNotificationEnabled(): Promise<boolean> {
-    try {
-      const result = await LocalNotifications.checkPermissions();
-      return result.display === 'granted';
-    } catch (err) {
-      return false;
-    }
-  }
-
-  /**
-   * Register action handlers (TAKE_NOW, SNOOZE_15)
-   * Called from main.ts to wire up button actions
-   */
-  static registerActionHandlers(callbacks: {
-    onTakeNow?: (medId: string) => void;
-    onSnooze?: (medId: string) => void;
-  }): void {
-    LocalNotifications.addListener('localNotificationActionPerformed', (notification) => {
-      const actionId = notification.actionId;
-      if (actionId === 'take_now' && callbacks.onTakeNow) {
-        // Extract medId from notification data
-        callbacks.onTakeNow(notification.notification.extra?.medId || '');
-      } else if (actionId === 'snooze_15' && callbacks.onSnooze) {
-        callbacks.onSnooze(notification.notification.extra?.medId || '');
-      }
+  static async initialize(): Promise<void> {
+    if (!this.isAvailable()) return;
+    await LocalNotifications.createChannel({
+      id: CHANNEL_ID,
+      name: 'Medication reminders',
+      description: 'Reminders for scheduled medication doses',
+      importance: 4,
+      visibility: 0,
+      vibration: true,
     });
+  }
+
+  static async upcoming(medications: Medication[], now = new Date()): Promise<LocalNotificationSchema[]> {
+    const end = new Date(now);
+    end.setDate(end.getDate() + 7);
+    const cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+    const notifications: LocalNotificationSchema[] = [];
+    const ids = new Map<number, string>();
+
+    while (cursor < end) {
+      const date = localDateKey(cursor);
+      const saved = await db.getDoses(date);
+      for (const med of medications) {
+        if (med.scheduleType === 'prn') continue;
+        const existing = saved.filter((dose) => dose.medId === med.id);
+        const doses = [...existing];
+        if (!await db.hasGeneratedDoseDay(med.id, date)) {
+          const generated = await SchedulerService.calculateDayDoses(med, date);
+          for (const dose of generated) {
+            if (!existing.some((item) => scheduledTime(item).getTime() === scheduledTime(dose).getTime())) {
+              doses.push(dose);
+            }
+          }
+        }
+        for (const dose of doses) {
+          if (dose.status !== 'pending') continue;
+          const at = scheduledTime(dose);
+          if (at <= now || at >= end) continue;
+          const id = notificationId(dose.id);
+          const previous = ids.get(id);
+          if (previous && previous !== dose.id) {
+            throw new Error('Medication reminder IDs conflict; reminders were not updated');
+          }
+          ids.set(id, dose.id);
+          notifications.push({
+            id,
+            title: `${med.name} ${med.strength}`.trim(),
+            body: `Time to take ${med.doseQty} ${med.unit}`,
+            channelId: CHANNEL_ID,
+            schedule: { at, allowWhileIdle: true },
+            isExactNotification: true,
+            isExactMandatory: true,
+            extra: { source: REMINDER_SOURCE, doseId: dose.id },
+          });
+        }
+      }
+      cursor.setDate(cursor.getDate() + 1);
+    }
+
+    return notifications.sort((a, b) => a.schedule!.at!.getTime() - b.schedule!.at!.getTime());
+  }
+
+  static async synchronize(medications: Medication[], requestPermission: boolean): Promise<void> {
+    if (!this.isAvailable()) return;
+    const notifications = await this.upcoming(medications);
+    const desired = new Map(notifications.map((notification) => [notification.id, notification]));
+    const pending = (await LocalNotifications.getPending()).notifications;
+    for (const item of pending) {
+      const expected = desired.get(item.id);
+      if (expected && (item.extra?.source !== REMINDER_SOURCE || item.extra?.doseId !== expected.extra.doseId)) {
+        throw new Error('Medication reminder ID conflicts with another notification');
+      }
+    }
+    const obsolete = pending.filter((item) =>
+      item.extra?.source === REMINDER_SOURCE && !desired.has(item.id)
+    );
+    if (obsolete.length) await LocalNotifications.cancel({ notifications: obsolete.map(({ id }) => ({ id })) });
+    if (!notifications.length) return;
+
+    let display = await LocalNotifications.checkPermissions();
+    if (display.display !== 'granted' && requestPermission) {
+      display = await LocalNotifications.requestPermissions();
+    }
+    if (display.display !== 'granted') {
+      throw new Error('Enable MedFlow notifications in Android settings to receive medication reminders');
+    }
+    let exact = await LocalNotifications.checkExactNotificationSetting();
+    if (exact.exact_alarm !== 'granted' && requestPermission) {
+      exact = await LocalNotifications.changeExactNotificationSetting();
+    }
+    if (exact.exact_alarm !== 'granted') {
+      throw new Error('Allow alarms and reminders in Android settings to receive exact medication reminders');
+    }
+    const result = await LocalNotifications.schedule({ notifications });
+    if (result.warning) throw new Error(result.warning.message);
+    if (result.notifications.length !== notifications.length) {
+      throw new Error('Android did not schedule every medication reminder');
+    }
   }
 }

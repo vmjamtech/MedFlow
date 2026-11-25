@@ -6,34 +6,60 @@
 import type { Medication, Dose } from '../db/schema';
 import { db } from '../db/database';
 import { GuardianSyncService } from './guardianSync';
+import { localDateAtMinutes, localDateKey } from '../utils/localDate';
 
 export class SchedulerService {
+  static async reconcileDay(medications: Medication[], date: string): Promise<Dose[]> {
+    const existingDoses = await db.getDoses(date);
+    for (const med of medications) {
+      if (med.scheduleType === 'prn') continue;
+      if (med.scheduleType === 'interval' && !med.intervalAnchor) {
+        const minutes = this.parseTimeToMinutes(med.fixedTimes?.[0] || '08:00');
+        med.intervalAnchor = localDateAtMinutes(date, minutes).toISOString();
+        await db.setIntervalAnchor(med.id, med.intervalAnchor);
+      }
+      if (await db.hasGeneratedDoseDay(med.id, date)) continue;
+      const doses = await this.calculateDayDoses(med, date);
+      for (const dose of doses) {
+        if (existingDoses.some((existing) =>
+          existing.medId === med.id &&
+          (existing.scheduledAt || localDateAtMinutes(date, existing.scheduledMinutes).toISOString()) === dose.scheduledAt
+        )) continue;
+        await db.saveDose(dose);
+      }
+      await db.markDoseDayGenerated(med.id, date);
+    }
+    return db.getDoses(date);
+  }
+
   /**
    * Calculate all doses for a medication on a given day
    * Returns doses sorted by scheduled time
    */
-  static async calculateDayDoses(med: Medication, dayMinutesOffset = 0): Promise<Dose[]> {
+  static async calculateDayDoses(med: Medication, date = localDateKey(new Date())): Promise<Dose[]> {
     if (med.scheduleType === 'fixed') {
-      return this.generateFixedDoses(med, dayMinutesOffset);
+      return this.generateFixedDoses(med, date);
     } else if (med.scheduleType === 'interval') {
-      return this.generateIntervalDoses(med, dayMinutesOffset);
+      return this.generateIntervalDoses(med, date);
     } else if (med.scheduleType === 'prn') {
       return []; // PRN has no scheduled doses; user initiates
     }
     return [];
   }
 
-  private static generateFixedDoses(med: Medication, dayOffset: number): Dose[] {
+  private static generateFixedDoses(med: Medication, date: string): Dose[] {
     const doses: Dose[] = [];
     const times = med.fixedTimes || ['08:00'];
 
     times.forEach((timeStr) => {
       const [h, m] = timeStr.split(':').map(Number);
-      const scheduledMinutes = (h * 60 + m) + dayOffset;
+      const scheduledMinutes = h * 60 + m;
 
       doses.push({
-        id: `dose-${med.id}-${timeStr}`,
+        id: `dose-${med.id}-${date}-${timeStr}`,
         medId: med.id,
+        scheduledDate: date,
+        scheduledAt: localDateAtMinutes(date, scheduledMinutes).toISOString(),
         scheduledMinutes,
         originalMinutes: scheduledMinutes,
         status: 'pending',
@@ -43,24 +69,36 @@ export class SchedulerService {
     return doses.sort((a, b) => a.scheduledMinutes - b.scheduledMinutes);
   }
 
-  private static generateIntervalDoses(med: Medication, dayOffset: number): Dose[] {
+  private static generateIntervalDoses(med: Medication, date: string): Dose[] {
     const doses: Dose[] = [];
     const intervalHours = med.intervalHours || 8;
     const startStr = med.fixedTimes?.[0] || '08:00';
     const [h, m] = startStr.split(':').map(Number);
-    let currentMinutes = (h * 60 + m) + dayOffset;
-
-    let count = 0;
-    while (currentMinutes < 24 * 60 + dayOffset && count < 24) {
+    const anchor = med.intervalAnchor
+      ? new Date(med.intervalAnchor)
+      : localDateAtMinutes(localDateKey(new Date()), h * 60 + m);
+    const intervalMs = intervalHours * 60 * 60 * 1000;
+    if (!Number.isFinite(anchor.getTime()) || !Number.isFinite(intervalMs) || intervalMs <= 0) {
+      throw new Error(`Invalid interval schedule for ${med.name}`);
+    }
+    const dayStart = localDateAtMinutes(date, 0);
+    const dayEnd = new Date(dayStart);
+    dayEnd.setDate(dayEnd.getDate() + 1);
+    let occurrence = Math.max(0, Math.ceil((dayStart.getTime() - anchor.getTime()) / intervalMs));
+    let scheduledAt = new Date(anchor.getTime() + occurrence * intervalMs);
+    while (scheduledAt < dayEnd) {
+      const scheduledMinutes = scheduledAt.getHours() * 60 + scheduledAt.getMinutes();
       doses.push({
-        id: `dose-${med.id}-${count}`,
+        id: `dose-${med.id}-${scheduledAt.getTime()}`,
         medId: med.id,
-        scheduledMinutes: currentMinutes,
-        originalMinutes: currentMinutes,
+        scheduledDate: date,
+        scheduledAt: scheduledAt.toISOString(),
+        scheduledMinutes,
+        originalMinutes: scheduledMinutes,
         status: 'pending',
       });
-      currentMinutes += intervalHours * 60;
-      count += 1;
+      occurrence += 1;
+      scheduledAt = new Date(anchor.getTime() + occurrence * intervalMs);
     }
 
     return doses;

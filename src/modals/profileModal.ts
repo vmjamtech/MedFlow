@@ -1,3 +1,5 @@
+import { Capacitor } from '@capacitor/core';
+import { Camera, CameraResultType, CameraSource } from '@capacitor/camera';
 import { db } from '../db/database';
 import type { LocalProfile } from '../db/database';
 import {
@@ -140,6 +142,8 @@ export async function openProfileModal(options: ProfileModalOptions): Promise<vo
   let updatePromptTimer: number | null = null;
   const preview = document.getElementById('profile-photo-preview')!;
   const photoInput = document.getElementById('profile-photo-input') as HTMLInputElement;
+  const photoButton = document.getElementById('profile-photo-button') as HTMLButtonElement;
+  const saveButton = document.querySelector<HTMLButtonElement>('#profile-modal-form button[type="submit"]')!;
   const sexInput = document.getElementById('profile-sex') as HTMLSelectElement;
   sexInput.value = currentProfile.sex;
 
@@ -153,16 +157,50 @@ export async function openProfileModal(options: ProfileModalOptions): Promise<vo
   updatePhotoPreview();
 
   document.getElementById('profile-name')!.addEventListener('input', updatePhotoPreview);
-  document.getElementById('profile-photo-button')!.addEventListener('click', () => photoInput.click());
+  photoButton.addEventListener('click', async () => {
+    if (Capacitor.getPlatform() !== 'android') {
+      photoInput.click();
+      return;
+    }
+    photoButton.disabled = true;
+    saveButton.disabled = true;
+    try {
+      const photo = await Camera.getPhoto({
+        source: CameraSource.Photos,
+        resultType: CameraResultType.DataUrl,
+        width: 300,
+        height: 300,
+        quality: 80,
+        correctOrientation: true,
+      });
+      if (!photo.dataUrl) throw new Error('The photo picker returned no image');
+      pendingPhoto = photo.dataUrl;
+      updatePhotoPreview();
+    } catch (error) {
+      if (!(error instanceof Error && error.message === 'User cancelled photos app')) {
+        console.error('Unable to select profile photo', error);
+        options.onToast('Unable to use that photo', 'warning');
+      }
+    } finally {
+      photoButton.disabled = false;
+      saveButton.disabled = false;
+    }
+  });
   photoInput.addEventListener('change', async () => {
     const file = photoInput.files?.[0];
     if (!file) return;
+    photoButton.disabled = true;
+    saveButton.disabled = true;
     try {
       pendingPhoto = await resizeProfilePhoto(file);
       updatePhotoPreview();
     } catch (error) {
       console.error('Unable to prepare profile photo', error);
       options.onToast('Unable to use that photo', 'warning');
+    } finally {
+      photoInput.value = '';
+      photoButton.disabled = false;
+      saveButton.disabled = false;
     }
   });
 
